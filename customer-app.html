@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>جرّب نظارتك</title>
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0e1a2b;--panel:#16263d;--line:#2a4163;--ink:#eaf1fb;--mute:#8da4c4;--acc:#ffb703}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'Readex Pro',Tahoma,sans-serif;padding:14px;display:flex;justify-content:center}
+.w{width:100%;max-width:640px;display:grid;gap:12px;align-content:start}
+h1{font-size:1.3rem;margin:2px 0}h2{font-size:1rem;margin:0 0 8px}
+.hide{display:none!important}
+button,a.b{font:inherit;cursor:pointer;color:var(--ink);background:#1d3555;border:1px solid var(--line);border-radius:10px;padding:9px 14px;min-height:44px;touch-action:manipulation;text-decoration:none;display:inline-flex;align-items:center}
+button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.pri{background:var(--acc);color:#1a1200;border:0;font-weight:700}
+.tabs{display:flex;gap:8px}.tabs button{flex:1}.tabs .on{background:var(--acc);color:#1a1200;border-color:var(--acc);font-weight:700}
+.stage{position:relative;background:#07101c;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+canvas{width:100%;height:auto;display:block}
+#msg{position:absolute;inset:0;display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--mute);line-height:1.8}
+.cap{display:flex;gap:10px;align-items:center;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.cap small{display:block;color:var(--mute)}
+.rail{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px}
+.rb{flex:0 0 92px;padding:6px;position:relative;background:#0b1626;min-height:70px;display:block}
+.rb.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc)}
+.rb img{width:100%;height:48px;object-fit:contain;display:block}
+.rb i{position:absolute;top:2px;inset-inline-start:5px;color:#ff5d7a;font-style:normal;font-size:.9rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px;margin-bottom:10px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.th{width:78px;text-align:center;font-size:.72rem;background:#0b1626;border-radius:8px;padding:4px}
+.th img{width:100%;height:36px;object-fit:contain}.th.off{opacity:.45}
+.note{font-size:.82rem;color:var(--mute);line-height:1.7;margin:4px 0}
+.code{font-size:1.9rem;letter-spacing:.2em;font-weight:700;color:var(--acc);margin:4px 0}
+</style>
+</head>
+<body>
+<div class="w">
+<h1>جرّب نظارتك قبل أن تخرج من البيت</h1>
+<div class="tabs"><button id="t1" class="on">تجربة</button><button id="t2">اختياراتي (<span id="fc">0</span>)</button></div>
+
+<div id="v1">
+  <div class="stage"><canvas id="c" width="960" height="720"></canvas>
+    <div id="msg"><span>اسمح بالكاميرا لتظهر النظارة على وجهك. الصورة تبقى على جهازك.</span><button class="pri" id="start">تشغيل الكاميرا</button></div></div>
+  <div class="cap"><div><b id="gname">—</b><small id="sname"></small></div><button id="fav">♡ أضفها للمفضلة</button></div>
+  <div class="rail" id="rail"></div>
+  <p class="note" id="none">لا توجد نظارات متاحة بعد. أضف نظارات من لوحة صاحب المحل أولًا.</p>
+</div>
+
+<div id="v2" class="hide">
+  <div id="groups"></div>
+  <p class="note" id="nofav">اضغط ♡ على النظارات التي أعجبتك لتجتمع هنا حسب المحل.</p>
+  <h2 style="margin-top:14px">حجوزاتي</h2>
+  <div id="bks"></div>
+</div>
+</div>
+<video id="v" playsinline muted style="display:none"></video>
+
+<script type="module">
+import {FaceLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+const $=id=>document.getElementById(id);
+const R=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
+const Wr=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
+const h=(t,a={},...k)=>{const e=document.createElement(t);Object.assign(e,a);k.flat().forEach(x=>e.append(x));return e};
+const shopOf=id=>R('shops',[]).find(s=>s.id===id)||{name:'محل',city:'',phone:''};
+const avail=()=>R('glasses',[]).filter(g=>g.avail!==false);
+const wa=p=>{let d=(p||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else if(d.startsWith('0'))d='963'+d.slice(1);return d};
+const AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789',gen=()=>Array.from({length:5},()=>AL[Math.random()*AL.length|0]).join('');
+let sel=null,fav=R('favs',[]),imgs={};
+const pic=g=>{if(!imgs[g.id]){const i=new Image();i.src=g.img;imgs[g.id]=i}return imgs[g.id]};
+
+/* ---------- تبويبات ---------- */
+const tab=n=>{$('v1').classList.toggle('hide',n!==1);$('v2').classList.toggle('hide',n!==2);
+  $('t1').classList.toggle('on',n===1);$('t2').classList.toggle('on',n===2);if(n===2){favs();bookings()}else rail()};
+$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+
+/* ---------- شريط النظارات ---------- */
+function rail(){
+  const L=avail();$('none').classList.toggle('hide',L.length>0);
+  if(!sel||!L.some(g=>g.id===sel.id))sel=L[0]||null;
+  const r=$('rail');r.innerHTML='';
+  L.forEach(g=>{const b=h('button',{className:'rb'+(sel&&sel.id===g.id?' on':''),onclick:()=>{sel=g;rail()}},h('img',{src:g.img,alt:g.name}));
+    if(fav.includes(g.id))b.append(h('i',{textContent:'♥'}));r.append(b)});
+  const s=sel&&shopOf(sel.shopId);
+  $('gname').textContent=sel?sel.name:'—';$('sname').textContent=sel?s.name+(s.city?' — '+s.city:''):'';
+  $('fav').textContent=sel&&fav.includes(sel.id)?'♥ في المفضلة':'♡ أضفها للمفضلة';$('fav').disabled=!sel;
+  $('fc').textContent=R('glasses',[]).filter(g=>fav.includes(g.id)).length;
+}
+$('fav').onclick=()=>{if(!sel)return;fav=fav.includes(sel.id)?fav.filter(x=>x!==sel.id):[...fav,sel.id];Wr('favs',fav);rail()};
+
+/* ---------- المفضلة حسب المحل ---------- */
+function favs(){
+  const mine=R('glasses',[]).filter(g=>fav.includes(g.id)),by={};
+  mine.forEach(g=>(by[g.shopId]=by[g.shopId]||[]).push(g));
+  $('nofav').classList.toggle('hide',mine.length>0);const box=$('groups');box.innerHTML='';
+  Object.entries(by).sort((a,b)=>b[1].length-a[1].length).forEach(([sid,L])=>{
+    const s=shopOf(sid),ok=L.filter(g=>g.avail!==false);
+    box.append(h('div',{className:'card'},
+      h('b',{textContent:s.name+(s.city?' — '+s.city:'')}),
+      h('p',{className:'note',textContent:'عنده '+L.length+' من اختياراتك'+(ok.length<L.length?' ('+ok.length+' متوفرة)':'')}),
+      h('div',{className:'row'},L.map(g=>h('div',{className:'th'+(g.avail===false?' off':'')},h('img',{src:g.img,alt:''}),g.name+(g.avail===false?' (نفد)':'')))),
+      h('button',{className:'pri',disabled:!ok.length,textContent:'احجز المتوفر ('+ok.length+') برمز واحد',onclick:()=>reserve(sid,ok.map(g=>g.id))})));
+  });
+}
+function reserve(shopId,ids){
+  const a=R('bookings',[]);a.push({code:gen(),shopId,glassIds:ids,created:Date.now(),status:'reserved'});Wr('bookings',a);bookings();$('bks').scrollIntoView({behavior:'smooth'});
+}
+
+/* ---------- الحجوزات ---------- */
+function bookings(){
+  const B=R('bookings',[]).slice().reverse(),box=$('bks');box.innerHTML='';
+  if(!B.length)box.append(h('p',{className:'note',textContent:'لا توجد حجوزات بعد.'}));
+  const G=R('glasses',[]);
+  B.forEach(b=>{
+    const s=shopOf(b.shopId),left=Math.ceil((b.created+3*864e5-Date.now())/864e5),dead=b.status==='reserved'&&left<=0;
+    const names=b.glassIds.map(id=>(G.find(g=>g.id===id)||{name:'؟'}).name).join('، ');
+    const c=h('div',{className:'card'},h('div',{className:'code',textContent:b.code}),
+      h('b',{textContent:s.name+(s.city?' — '+s.city:'')}),h('p',{className:'note',textContent:'الموديلات: '+names}));
+    if(b.status==='sold')c.append(h('p',{textContent:'✓ تمّ الشراء'}));
+    else if(dead)c.append(h('p',{className:'note',textContent:'انتهت مدة الحجز'}));
+    else{
+      c.append(h('p',{className:'note',textContent:'أرِ هذا الرمز لصاحب المحل. الحجز ساري '+left+' يوم.'}),
+        h('div',{className:'row'},
+          h('a',{className:'b',href:'tel:'+(s.phone||''),textContent:'اتصال'}),
+          h('a',{className:'b',href:'https://wa.me/'+wa(s.phone),target:'_blank',rel:'noopener',textContent:'واتساب'})));
+      if(!b.cust)c.append(h('div',{className:'row'},h('span',{className:'note',textContent:'هل اشتريت؟'}),
+        h('button',{textContent:'نعم',onclick:()=>cust(b.code,'bought')}),h('button',{textContent:'لا',onclick:()=>cust(b.code,'no')})));
+    }
+    box.append(c);
+  });
+}
+function cust(code,v){const a=R('bookings',[]);a.find(x=>x.code===code).cust=v;Wr('bookings',a);bookings()}
+
+/* ---------- الكاميرا والتتبع ---------- */
+const vid=$('v'),cv=$('c'),ctx=cv.getContext('2d');let lm=null,running=false,lastT=-1,face=null;
+$('start').onclick=async()=>{
+  $('start').disabled=true;
+  try{vid.srcObject=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});
+    await vid.play();cv.width=vid.videoWidth;cv.height=vid.videoHeight}
+  catch(e){$('msg').firstChild.textContent='تعذّر تشغيل الكاميرا. تأكد من السماح بها وأن الصفحة على رابط https.';$('start').disabled=false;return}
+  $('msg').firstChild.textContent='جارٍ تحميل نموذج الوجه…';
+  try{const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    const mk=dl=>FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:dl},runningMode:"VIDEO",numFaces:1});
+    try{lm=await mk("GPU")}catch(_){lm=await mk("CPU")}}
+  catch(e){$('msg').firstChild.textContent='تعذّر تحميل نموذج الوجه. تأكد من الإنترنت.';$('start').disabled=false;return}
+  $('msg').classList.add('hide');running=true;loop();
+};
+const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+function loop(){
+  const W=cv.width,H=cv.height;
+  if(!$('v1').classList.contains('hide')){
+    ctx.save();ctx.translate(W,0);ctx.scale(-1,1);ctx.drawImage(vid,0,0,W,H);ctx.restore();
+    if(vid.currentTime!==lastT){lastT=vid.currentTime;const r=lm.detectForVideo(vid,performance.now());face=r.faceLandmarks&&r.faceLandmarks[0]||null}
+    if(face&&sel){const i=pic(sel);if(i.complete&&i.naturalWidth){
+      const P=k=>({x:(1-face[k].x)*W,y:face[k].y*H});
+      let A=mid(P(33),P(133)),B=mid(P(362),P(263));if(A.x>B.x)[A,B]=[B,A];
+      const d=Math.hypot(B.x-A.x,B.y-A.y),ang=Math.atan2(B.y-A.y,B.x-A.x),c=mid(A,B),gw=d*(sel.scale||2.3),gh=gw*i.naturalHeight/i.naturalWidth;
+      ctx.save();ctx.translate(c.x,c.y+d*(sel.off||0));ctx.rotate(ang);ctx.drawImage(i,-gw/2,-gh/2,gw,gh);ctx.restore();}}
+  }
+  requestAnimationFrame(loop);
+}
+rail();
+</script>
+</body>
+</html>
