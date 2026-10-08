@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>جرّب نظارتك</title>
+<link rel="manifest" href="customer-app.webmanifest">
+<meta name="theme-color" content="#0e1a2b">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#0e1a2b;--panel:#16263d;--line:#2a4163;--ink:#eaf1fb;--mute:#8da4c4;--acc:#ffb703}
@@ -37,6 +42,8 @@ canvas{width:100%;height:auto;display:block}
 <body>
 <div class="w">
 <h1>جرّب نظارتك قبل أن تخرج من البيت</h1>
+<button class="pri hide" id="instBtn">ثبّت التطبيق على جوالك</button>
+<p class="note hide" id="iosTip">في آيفون: اضغط زر المشاركة في Safari ثم «إضافة إلى الشاشة الرئيسية».</p>
 <div class="tabs"><button id="t1" class="on">تجربة</button><button id="t2">اختياراتي (<span id="fc">0</span>)</button></div>
 
 <div id="v1">
@@ -167,6 +174,14 @@ function loop(){
   requestAnimationFrame(loop);
 }
 load().then(rail);
+
+/* ---------- التثبيت على الجوال ---------- */
+let ip=null;
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();ip=e;$('instBtn').classList.remove('hide')});
+$('instBtn').onclick=async()=>{if(!ip)return;ip.prompt();await ip.userChoice;ip=null;$('instBtn').classList.add('hide')};
+addEventListener('appinstalled',()=>$('instBtn').classList.add('hide'));
+if(/iphone|ipad/i.test(navigator.userAgent)&&!navigator.standalone)$('iosTip').classList.remove('hide');
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
 </html>
