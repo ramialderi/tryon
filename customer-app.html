@@ -37,6 +37,24 @@ canvas{width:100%;height:auto;display:block}
 .th img{width:100%;height:36px;object-fit:contain}.th.off{opacity:.45}
 .note{font-size:.82rem;color:var(--mute);line-height:1.7;margin:4px 0}
 .code{font-size:1.9rem;letter-spacing:.2em;font-weight:700;color:var(--acc);margin:4px 0}
+.rhead{display:flex;justify-content:space-between;align-items:center}
+.link{background:none;border:0;color:var(--acc);min-height:36px;padding:4px 8px}
+.shot{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);width:68px;height:68px;border-radius:50%;background:transparent;border:5px solid #fff;padding:0}
+.shot::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}
+.shot:active::after{inset:9px}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .18s}.flash.go{opacity:.85;transition:none}
+.prev{position:fixed;inset:0;background:#000e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;z-index:50}
+.prev img{max-width:100%;max-height:68vh;border-radius:14px}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.sg{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.sc{position:relative;aspect-ratio:3/4;border-radius:18px;overflow:hidden;padding:0;display:block;background:linear-gradient(160deg,#27456e,#0b1626)}
+.col{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:12px 10px}
+.col img{width:100%;aspect-ratio:1.5;object-fit:contain;display:block}
+.ov{position:absolute;inset-inline:0;bottom:0;padding:26px 12px 10px;background:linear-gradient(transparent,#000c);text-align:start}
+.ov b{display:block}.ov small{color:var(--mute)}
+.gg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.gt{display:block;padding:8px;background:#0b1626;text-align:center;font-size:.75rem}
+.gt img{width:100%;height:44px;object-fit:contain;display:block;margin-bottom:4px}
 </style>
 </head>
 <body>
@@ -48,8 +66,9 @@ canvas{width:100%;height:auto;display:block}
 
 <div id="v1">
   <div class="stage"><canvas id="c" width="960" height="720"></canvas>
-    <div id="msg"><span>اسمح بالكاميرا لتظهر النظارة على وجهك. الصورة تبقى على جهازك.</span><button class="pri" id="start">تشغيل الكاميرا</button></div></div>
+    <div id="msg"><span>اسمح بالكاميرا لتظهر النظارة على وجهك. الصورة تبقى على جهازك.</span><button class="pri" id="start">تشغيل الكاميرا</button></div><button id="shot" class="shot hide" aria-label="التقاط صورة"></button><div id="flash" class="flash"></div></div>
   <div class="cap"><div><b id="gname">—</b><small id="sname"></small></div><button id="fav">♡ أضفها للمفضلة</button></div>
+  <div class="rhead"><b id="rtitle">نظارات المحلات</b><button class="link" id="more">المزيد ›</button></div>
   <div class="rail" id="rail"></div>
   <p class="note" id="none">لا توجد نظارات متاحة بعد. أضف نظارات من لوحة صاحب المحل أولًا.</p>
 </div>
@@ -60,7 +79,20 @@ canvas{width:100%;height:auto;display:block}
   <h2 style="margin-top:14px">حجوزاتي</h2>
   <div id="bks"></div>
 </div>
+
+<div id="v3" class="hide">
+  <div class="top"><button id="b3">→ رجوع</button><b>المحلات</b></div>
+  <div class="sg" id="sgrid"></div>
 </div>
+
+<div id="v4" class="hide">
+  <div class="top"><button id="b4">→ رجوع</button><b id="shn"></b></div>
+  <div class="gg" id="ggrid"></div>
+</div>
+</div>
+<div id="prev" class="prev hide"><img id="pimg" alt="صورتك">
+  <div class="row"><button class="pri" id="psave">حفظ</button><button id="pshare">مشاركة</button><button id="pclose">إغلاق</button></div>
+  <p class="note">يمكنك أيضًا الضغط مطوّلًا على الصورة لحفظها.</p></div>
 <video id="v" playsinline muted style="display:none"></video>
 
 <script type="module">
@@ -80,20 +112,46 @@ const AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789',gen=()=>Array.from({length:5},()=>AL[
 let sel=null,fav=R('favs',[]),imgs={};
 const pic=g=>{if(!imgs[g.id]){const i=new Image();i.crossOrigin='anonymous';i.src=g.img_url;imgs[g.id]=i}return imgs[g.id]};
 
-/* ---------- تبويبات ---------- */
-const tab=async n=>{if(n===2)await load();$('v1').classList.toggle('hide',n!==1);$('v2').classList.toggle('hide',n!==2);
-  $('t1').classList.toggle('on',n===1);$('t2').classList.toggle('on',n===2);if(n===2){favs();bookings()}else rail()};
-$('t1').onclick=()=>tab(1);$('t2').onclick=()=>tab(2);
+/* ---------- التنقل بين الصفحات ---------- */
+const RAIL_MAX=10;let scope=null;
+function show(v){[1,2,3,4].forEach(k=>$('v'+k).classList.toggle('hide',k!==v));
+  $('t1').classList.toggle('on',v!==2);$('t2').classList.toggle('on',v===2);scrollTo(0,0)}
+function apply(st){const v=st.v||1;show(v);
+  if(v===1)rail();if(v===2){favs();bookings()}if(v===3)drawShops();if(v===4)drawShop(st.p)}
+function nav(v,p){history.pushState({v,p},'');apply({v,p})}
+addEventListener('popstate',e=>apply(e.state||{v:1}));
+history.replaceState({v:1},'');
+$('t1').onclick=()=>{scope=null;nav(1)};
+$('t2').onclick=async()=>{await load();nav(2)};
+$('more').onclick=()=>nav(3);$('b3').onclick=()=>history.back();$('b4').onclick=()=>history.back();
+
+function drawShops(){
+  const by={};avail().forEach(g=>(by[g.shop_id]=by[g.shop_id]||[]).push(g));
+  const box=$('sgrid'),E=Object.entries(by).sort((a,b)=>b[1].length-a[1].length);box.innerHTML='';
+  if(!E.length)box.append(h('p',{className:'note',textContent:'لا توجد محلات بعد.'}));
+  E.forEach(([sid,L])=>{const sh=shopOf(sid);
+    box.append(h('button',{className:'sc',onclick:()=>nav(4,sid)},
+      h('span',{className:'col'},L.slice(0,4).map(g=>h('img',{src:g.img_url,alt:''}))),
+      h('span',{className:'ov'},h('b',{textContent:sh.name}),h('small',{textContent:(sh.city?sh.city+' · ':'')+L.length+' نظارة'}))))});
+}
+function drawShop(sid){
+  const sh=shopOf(sid),L=avail().filter(g=>g.shop_id===sid);
+  $('shn').textContent=sh.name+(sh.city?' — '+sh.city:'');const box=$('ggrid');box.innerHTML='';
+  L.forEach(g=>box.append(h('button',{className:'gt',onclick:()=>{scope=sid;sel=g;nav(1)}},h('img',{src:g.img_url,alt:g.name}),g.name)));
+}
 
 /* ---------- شريط النظارات ---------- */
 function rail(){
-  const L=avail();$('none').classList.toggle('hide',L.length>0);
-  if(!sel||!L.some(g=>g.id===sel.id))sel=L[0]||null;
+  const A=avail(),L=scope?A.filter(g=>g.shop_id===scope):A;$('none').classList.toggle('hide',A.length>0);
+  if(!sel||!A.some(g=>g.id===sel.id))sel=L[0]||A[0]||null;
+  let sh=scope?L:L.slice(0,RAIL_MAX);if(sel&&!sh.some(g=>g.id===sel.id))sh=[sel,...sh.slice(0,RAIL_MAX-1)];
   const r=$('rail');r.innerHTML='';
-  L.forEach(g=>{const b=h('button',{className:'rb'+(sel&&sel.id===g.id?' on':''),onclick:()=>{sel=g;rail()}},h('img',{src:g.img_url,alt:g.name}));
+  sh.forEach(g=>{const b=h('button',{className:'rb'+(sel&&sel.id===g.id?' on':''),onclick:()=>{sel=g;rail()}},h('img',{src:g.img_url,alt:g.name}));
     if(fav.includes(g.id))b.append(h('i',{textContent:'♥'}));r.append(b)});
-  const s=sel&&shopOf(sel.shop_id);
-  $('gname').textContent=sel?sel.name:'—';$('sname').textContent=sel?s.name+(s.city?' — '+s.city:''):'';
+  $('rtitle').textContent=scope?shopOf(scope).name+' ('+L.length+')':'نظارات المحلات';
+  $('more').textContent=scope?'كل المحلات ›':(A.length>RAIL_MAX?'المزيد ›':'المحلات ›');
+  const sp=sel&&shopOf(sel.shop_id);
+  $('gname').textContent=sel?sel.name:'—';$('sname').textContent=sel?sp.name+(sp.city?' — '+sp.city:''):'';
   $('fav').textContent=sel&&fav.includes(sel.id)?'♥ في المفضلة':'♡ أضفها للمفضلة';$('fav').disabled=!sel;
   $('fc').textContent=GL.filter(g=>fav.includes(g.id)).length;
 }
@@ -157,7 +215,7 @@ $('start').onclick=async()=>{
     const mk=dl=>FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:dl},runningMode:"VIDEO",numFaces:1});
     try{lm=await mk("GPU")}catch(_){lm=await mk("CPU")}}
   catch(e){$('msg').firstChild.textContent='تعذّر تحميل نموذج الوجه. تأكد من الإنترنت.';$('start').disabled=false;return}
-  $('msg').classList.add('hide');running=true;loop();
+  $('msg').classList.add('hide');$('shot').classList.remove('hide');running=true;loop();
 };
 const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
 function loop(){
@@ -173,6 +231,25 @@ function loop(){
   }
   requestAnimationFrame(loop);
 }
+/* ---------- التقاط الصورة ---------- */
+let blob=null,burl=null;const ios=/iphone|ipad/i.test(navigator.userAgent),fname=()=>'glasses-'+Date.now()+'.jpg';
+$('shot').onclick=()=>{
+  const W=cv.width,H=cv.height,o=document.createElement('canvas');o.width=W;o.height=H;const x=o.getContext('2d');x.drawImage(cv,0,0);
+  if(sel){const sp=shopOf(sel.shop_id),fs=Math.round(W*.04);
+    x.fillStyle='rgba(8,16,28,.72)';x.fillRect(0,H-fs*2.2,W,fs*2.2);x.fillStyle='#fff';x.font='600 '+fs+'px Tahoma,sans-serif';
+    x.direction='rtl';x.textAlign='center';x.textBaseline='middle';x.fillText(sel.name+' — '+sp.name+(sp.city?' ('+sp.city+')':''),W/2,H-fs*1.1)}
+  $('flash').classList.add('go');setTimeout(()=>$('flash').classList.remove('go'),180);
+  try{o.toBlob(b=>{if(!b)return;blob=b;if(burl)URL.revokeObjectURL(burl);burl=URL.createObjectURL(b);$('pimg').src=burl;$('prev').classList.remove('hide')},'image/jpeg',.92)}
+  catch(e){alert('تعذّر التقاط الصورة')}
+};
+const dl=()=>{const a=document.createElement('a');a.href=burl;a.download=fname();a.click()};
+async function share(){const f=new File([blob],fname(),{type:'image/jpeg'});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){try{await navigator.share({files:[f],title:'نظارتي'})}catch(e){}}
+  else dl()}
+$('psave').onclick=()=>ios?share():dl();
+$('pshare').onclick=share;
+$('pclose').onclick=()=>$('prev').classList.add('hide');
+
 load().then(rail);
 
 /* ---------- التثبيت على الجوال ---------- */
