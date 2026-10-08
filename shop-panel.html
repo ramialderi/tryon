@@ -60,6 +60,10 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 
 <!-- اللوحة -->
 <div id="panel" class="hide w">
+  <div class="card" id="wal"><b>رصيدك: <span id="bal">…</span></b>
+    <p class="note" id="walnote"></p>
+    <a class="btn pri hide" id="supp" target="_blank" rel="noopener">شحن الرصيد عبر واتساب</a>
+    <div id="txl" class="note"></div></div>
   <div class="card hide" id="pend">⏳ حسابك بانتظار موافقة الإدارة. يمكنك إضافة نظاراتك الآن، لكنها لن تظهر للزبائن قبل الموافقة.</div>
   <div class="card bar"><b id="shopname"></b><button id="out">تسجيل خروج</button></div>
 
@@ -151,7 +155,7 @@ async function render(){
   if(session){const r=await sb.from('shops').select('id,name,city,approved').eq('id',session.user.id).maybeSingle();me=r.data}
   $('auth').classList.toggle('hide',!!me);$('panel').classList.toggle('hide',!me);
   if(!me)return;$('shopname').textContent=me.name+(me.city?' — '+me.city:'');$('pend').classList.toggle('hide',me.approved!==false);
-  try{await drawList();await drawBk()}catch(e){fail(e)}
+  try{await drawList();await drawBk();await drawWallet()}catch(e){fail(e)}
 }
 async function drawList(){
   const l=ck(await sb.from('glasses').select('*').eq('shop_id',me.id).order('created_at',{ascending:false}));
@@ -163,6 +167,19 @@ async function drawList(){
     const v=document.createElement('button');v.textContent=g.avail?'متوفر ✓':'نفد ✗';
     v.onclick=async()=>{try{ck(await sb.from('glasses').update({avail:!g.avail}).eq('id',g.id));drawList()}catch(e){fail(e)}};
     d.append(v,b);$('list').appendChild(d)});
+}
+
+/* ---------- الرصيد ---------- */
+async function drawWallet(){
+  const[W,S,T]=await Promise.all([sb.from('wallets').select('balance').eq('shop_id',me.id).maybeSingle(),sb.from('settings').select('*'),
+    sb.from('wallet_tx').select('*').eq('shop_id',me.id).order('created_at',{ascending:false}).limit(8)]);
+  const st=Object.fromEntries((S.data||[]).map(x=>[x.key,x.value])),bal=Number(W.data?W.data.balance:0),fee=Number(st.fee_amount||0),cur=st.currency||'';
+  $('bal').textContent=bal+' '+cur;
+  $('walnote').textContent='كل بيعة مؤكدة تخصم '+fee+' '+cur+'.'+(bal<fee?' ⛔ نظاراتك مخفية عن الزبائن حتى تشحن رصيدك.':'');
+  let d=(st.support_phone||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else if(d.startsWith('0'))d='963'+d.slice(1);
+  $('supp').classList.toggle('hide',!d);if(d)$('supp').href='https://wa.me/'+d;
+  $('txl').innerHTML='';(T.data||[]).forEach(t=>{const r=document.createElement('div');
+    r.textContent=new Date(t.created_at).toLocaleDateString('ar')+' — '+(t.amount>0?'+':'')+t.amount+' '+cur+' — '+(t.kind==='fee'?'عمولة بيع '+(t.booking_code||''):'شحن رصيد');$('txl').appendChild(r)});
 }
 
 /* ---------- الحجوزات ---------- */
@@ -178,8 +195,8 @@ async function drawBk(){
 $('sell').onclick=async()=>{
   const code=$('bcode').value.trim().toUpperCase();$('bmsg').textContent='';if(!code)return;
   const{error}=await sb.rpc('confirm_sale',{p_code:code});
-  if(error){$('bmsg').textContent='لا يوجد حجز ساري بهذا الرمز في محلك';return}
-  $('bcode').value='';drawBk();
+  if(error){$('bmsg').textContent=/insufficient/.test(error.message)?'رصيدك لا يكفي لتأكيد هذه البيعة. تواصل مع الإدارة لشحنه.':'لا يوجد حجز ساري بهذا الرمز في محلك';return}
+  $('bcode').value='';drawBk();drawWallet();
 };
 
 /* ---------- الدفعة وإزالة الخلفية ---------- */
