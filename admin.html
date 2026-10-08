@@ -68,6 +68,7 @@ $('refresh').onclick=()=>load();
 async function boot(){
   const{data:{session}}=await sb.auth.getSession();if(!session)return;
   const r=await sb.rpc('is_admin');
+  if(r.error){await sb.auth.signOut();$('err').textContent='تعذّر التحقق: '+r.error.message;return}
   if(!r.data){await sb.auth.signOut();$('err').textContent='هذا الحساب ليس حساب إدارة';return}
   $('login').classList.add('hide');$('main').classList.remove('hide');load();
 }
