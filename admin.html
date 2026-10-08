@@ -42,6 +42,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-of
 
 <div id="main" class="hide w">
   <div class="st" id="stats"></div>
+  <div class="card"><b>الإعدادات</b>
+    <input type="text" id="sfee" inputmode="numeric" placeholder="عمولة كل بيعة مؤكدة" dir="ltr">
+    <input type="text" id="scur" placeholder="العملة، مثل: ل.س">
+    <input type="text" id="ssup" placeholder="رقم واتساب الإدارة لشحن الرصيد" dir="ltr">
+    <button id="savest">حفظ الإعدادات</button></div>
   <div class="row" id="chips"></div>
   <div id="list"></div>
   <div class="row"><button id="refresh">تحديث</button><button id="out">خروج</button></div>
@@ -77,9 +82,11 @@ async function load(){
     sb.from('shops').select('*').order('created_at',{ascending:false}),
     sb.from('shop_contacts').select('*'),
     sb.from('glasses').select('id,shop_id,name,img_url'),
-    sb.from('bookings').select('shop_id,status,cust')]);
+    sb.from('bookings').select('shop_id,status,cust'),
+    sb.from('wallets').select('*'),sb.from('settings').select('*')]);
   const bad=R.find(r=>r.error);if(bad){alert('تعذّر التحميل: '+bad.error.message);return}
-  D={S:R[0].data,P:Object.fromEntries(R[1].data.map(c=>[c.shop_id,c.phone])),G:R[2].data,B:R[3].data};draw();
+  D={S:R[0].data,P:Object.fromEntries(R[1].data.map(c=>[c.shop_id,c.phone])),G:R[2].data,B:R[3].data,W:Object.fromEntries(R[4].data.map(w=>[w.shop_id,w.balance])),T:Object.fromEntries(R[5].data.map(x=>[x.key,x.value]))};
+  $('sfee').value=D.T.fee_amount||'';$('scur').value=D.T.currency||'';$('ssup').value=D.T.support_phone||'';draw();
 }
 function draw(){
   const{S,G,B}=D,pend=S.filter(s=>!s.approved).length;
@@ -94,19 +101,33 @@ function draw(){
   $('list').innerHTML='';
   if(!L.length)$('list').append(h('p',{className:'note',textContent:'لا توجد محلات في هذه القائمة.'}));
   L.forEach(s=>{
-    const gs=G.filter(g=>g.shop_id===s.id),bs=B.filter(b=>b.shop_id===s.id),flags=bs.filter(b=>b.cust==='bought'&&b.status!=='sold').length,ph=D.P[s.id]||'';
+    const gs=G.filter(g=>g.shop_id===s.id),bs=B.filter(b=>b.shop_id===s.id),flags=bs.filter(b=>b.cust==='bought'&&b.status!=='sold').length,ph=D.P[s.id]||'',bal=Number(D.W[s.id]||0),fee=Number(D.T.fee_amount||0),cur=D.T.currency||'';
     $('list').append(h('div',{className:'card',style:'margin-bottom:10px'},
       h('b',{textContent:s.name+(s.city?' — '+s.city:'')}),
       h('p',{className:'note',textContent:'الهاتف: '+(ph||'—')+' | سُجّل: '+new Date(s.created_at).toLocaleDateString('ar')}),
       h('p',{className:'note',textContent:'النظارات: '+gs.length+' | المبيعات المؤكدة: '+bs.filter(b=>b.status==='sold').length}),
+      h('p',{className:'note',textContent:'الرصيد: '+bal+' '+cur+(s.approved&&bal<fee?' — ⛔ نظاراته مخفية لنفاد الرصيد':'')}),
       flags?h('p',{className:'warn',textContent:'⚠ '+flags+' حجز يقول الزبون إنه اشترى ولم يؤكد المحل'}):'',
       h('div',{className:'row th'},gs.slice(0,8).map(g=>h('img',{src:g.img_url,alt:g.name,title:g.name}))),
       h('div',{className:'row'},
         h('button',{className:s.approved?'bad':'pri',textContent:s.approved?'إيقاف المحل':'اعتماد المحل',onclick:()=>setAp(s)}),
+        h('button',{textContent:'شحن رصيد',onclick:()=>topup(s)}),
         ph?h('a',{className:'b',href:'tel:'+ph,textContent:'اتصال'}):'',
         ph?h('a',{className:'b',href:'https://wa.me/'+wa(ph),target:'_blank',rel:'noopener',textContent:'واتساب'}):'')));
   });
 }
+async function topup(s){
+  const a=prompt('مبلغ الشحن لمحل «'+s.name+'» ('+(D.T.currency||'')+')\nيمكن إدخال رقم سالب للتصحيح');if(a===null)return;
+  const n=Number(a);if(!isFinite(n)||n===0){alert('أدخل رقمًا صحيحًا');return}
+  const r=await sb.rpc('admin_topup',{p_shop:s.id,p_amount:n,p_note:prompt('ملاحظة (اختياري)')||null});
+  if(r.error){alert('تعذّر الشحن: '+r.error.message);return}load();
+}
+$('savest').onclick=async()=>{
+  const v=[['fee_amount',$('sfee').value.trim()],['currency',$('scur').value.trim()],['support_phone',$('ssup').value.trim()]];
+  if(!(Number($('sfee').value)>=0)||!$('sfee').value.trim()){alert('أدخل مبلغ العمولة كرقم');return}
+  for(const[k,x]of v){const r=await sb.rpc('set_setting',{p_key:k,p_val:x});if(r.error){alert('تعذّر الحفظ: '+r.error.message);return}}
+  alert('تم حفظ الإعدادات');load();
+};
 async function setAp(s){
   if(s.approved&&!confirm('إيقاف هذا المحل؟ ستختفي نظاراته من تطبيق الزبون.'))return;
   const r=await sb.rpc('set_approved',{p_shop:s.id,p_val:!s.approved});
