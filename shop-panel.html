@@ -54,7 +54,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
   <label for="sp">رقم الهاتف (واتساب)</label><input type="tel" id="sp" autocomplete="tel">
   <label for="spw">كلمة السر</label><input type="password" id="spw" autocomplete="current-password">
   <div class="err" id="aerr"></div>
-  <div class="bar"><button class="pri" id="ago">تسجيل</button><button id="aswap">لدي حساب بالفعل</button></div>
+  <div class="bar"><button class="pri" id="ago">تسجيل</button><button id="aswap">لدي حساب بالفعل</button><button class="link hide" id="forgot">نسيت كلمة السر؟</button></div>
   <p class="note">نسخة تجريبية: البيانات تُحفظ على هذا المتصفح فقط إلى أن نربطها بالخادم.</p>
 </div>
 
@@ -110,14 +110,29 @@ input[type=range]{width:100%;accent-color:var(--acc)}
     <div id="bklist" style="margin-top:12px"></div></div>
 
   <div class="card"><h2>نظاراتي</h2><div class="grid" id="list"></div><p class="note" id="empty">لم تضف نظارات بعد.</p></div>
+
+  <div class="card"><h2>تغيير كلمة السر</h2>
+    <input type="password" id="np" placeholder="كلمة السر الجديدة (6 أحرف على الأقل)" autocomplete="new-password">
+    <div class="err" id="pmsg"></div><button id="chpw">تغيير</button></div>
 </div>
 </div>
 <video id="v" playsinline muted style="display:none"></video>
 
 <script type="module">
-import {FaceLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
 import {createClient} from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import {SUPABASE_URL,SUPABASE_KEY} from "./config.js";
+
+const CDN="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14",GMODEL="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+/* يحاول أولًا الملفات المرفوعة على موقعك (mediapipe/ و models/) ثم يعود للإنترنت إذا لم توجد */
+async function makeLandmarker(){
+  const build=async(base,model,imp)=>{
+    const m=await import(imp),fs=await m.FilesetResolver.forVisionTasks(base);
+    const mk=dl=>m.FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:model,delegate:dl},runningMode:"VIDEO",numFaces:1});
+    try{return await mk("GPU")}catch(_){return await mk("CPU")}
+  };
+  try{return await build("./mediapipe/wasm","./models/face_landmarker.task","./mediapipe/vision_bundle.mjs")}
+  catch(e){return await build(CDN+"/wasm",GMODEL,CDN+"/vision_bundle.mjs")}
+}
 const $=id=>document.getElementById(id);
 const R=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
 const Wr=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
@@ -132,7 +147,7 @@ const fail=e=>alert('تعذّر تنفيذ العملية: '+e.message);
 /* ---------- الدخول ---------- */
 let reg=true;
 function authMode(){$('atitle').textContent=reg?'تسجيل محل جديد':'تسجيل الدخول';$('regOnly').classList.toggle('hide',!reg);
-  $('ago').textContent=reg?'تسجيل':'دخول';$('aswap').textContent=reg?'لدي حساب بالفعل':'محل جديد؟ سجّل';$('aerr').textContent=''}
+  $('ago').textContent=reg?'تسجيل':'دخول';$('aswap').textContent=reg?'لدي حساب بالفعل':'محل جديد؟ سجّل';$('aerr').textContent='';$('forgot').classList.toggle('hide',reg)}
 $('aswap').onclick=()=>{reg=!reg;authMode()};
 $('ago').onclick=async()=>{
   const n=$('sn').value.trim(),c=$('sc').value.trim(),p=$('sp').value.trim(),pw=$('spw').value;$('aerr').textContent='';
@@ -147,6 +162,14 @@ $('ago').onclick=async()=>{
     }else ck(await sb.auth.signInWithPassword({email:fake(p),password:pw}));
     await render();
   }catch(e){$('aerr').textContent=ar(e.message)}
+};
+$('forgot').onclick=async()=>{
+  const p=$('sp').value.trim();$('aerr').textContent='';
+  if(p.replace(/\D/g,'').length<6){$('aerr').textContent='اكتب رقم هاتف محلك أولًا ثم اضغط «نسيت كلمة السر»';return}
+  const r=await sb.from('settings').select('value').eq('key','support_phone').maybeSingle();
+  let d=((r.data&&r.data.value)||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else if(d.startsWith('0'))d='963'+d.slice(1);
+  if(!d){$('aerr').textContent='تواصل مع الإدارة لاستعادة كلمة السر';return}
+  open('https://wa.me/'+d+'?text='+encodeURIComponent('السلام عليكم، نسيت كلمة السر لمحلي. رقم الهاتف المسجّل: '+p),'_blank');
 };
 $('out').onclick=async()=>{await sb.auth.signOut();stopCam();items=[];await render()};
 
@@ -296,9 +319,7 @@ $('tryBtn').onclick=async()=>{
   }catch(e){$('msg').textContent='تعذّر تشغيل الكاميرا. تأكد من السماح بها وأن الصفحة على رابط https.';return}
   $('msg').textContent='جارٍ تحميل نموذج الوجه…';
   try{
-    if(!lm){const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
-      const mk=dl=>FaceLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:dl},runningMode:"VIDEO",numFaces:1});
-      try{lm=await mk("GPU")}catch(_){lm=await mk("CPU")}}
+    if(!lm)lm=await makeLandmarker();
   }catch(e){$('msg').textContent='تعذّر تحميل نموذج الوجه. تأكد من الإنترنت.';return}
   $('msg').style.display='none';running=true;loop();
 };
@@ -336,6 +357,13 @@ $('saveAll').onclick=async()=>{
   if(n)$('list').scrollIntoView({behavior:'smooth'});
 };
 
+$('chpw').onclick=async()=>{
+  const v=$('np').value;$('pmsg').style.color='';
+  if(v.length<6){$('pmsg').textContent='كلمة السر 6 أحرف على الأقل';return}
+  const{error}=await sb.auth.updateUser({password:v});
+  $('pmsg').textContent=error?'تعذّر التغيير: '+error.message:'تم تغيير كلمة السر ✓';
+  if(!error){$('pmsg').style.color='#7ee2a8';$('np').value=''}
+};
 authMode();render();
 
 /* ---------- التثبيت على الجوال ---------- */

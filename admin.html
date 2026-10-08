@@ -112,6 +112,7 @@ function draw(){
       h('div',{className:'row'},
         h('button',{className:s.approved?'bad':'pri',textContent:s.approved?'إيقاف المحل':'اعتماد المحل',onclick:()=>setAp(s)}),
         h('button',{textContent:'شحن رصيد',onclick:()=>topup(s)}),
+        h('button',{textContent:'كلمة سر جديدة',onclick:()=>resetPw(s,ph)}),
         ph?h('a',{className:'b',href:'tel:'+ph,textContent:'اتصال'}):'',
         ph?h('a',{className:'b',href:'https://wa.me/'+wa(ph),target:'_blank',rel:'noopener',textContent:'واتساب'}):'')));
   });
@@ -128,6 +129,14 @@ $('savest').onclick=async()=>{
   for(const[k,x]of v){const r=await sb.rpc('set_setting',{p_key:k,p_val:x});if(r.error){alert('تعذّر الحفظ: '+r.error.message);return}}
   alert('تم حفظ الإعدادات');load();
 };
+async function resetPw(s,ph){
+  if(!confirm('تعيين كلمة سر مؤقتة جديدة لمحل «'+s.name+'»؟ تأكد أولًا من هوية صاحب المحل بالاتصال به.'))return;
+  const ch='abcdefghjkmnpqrstuvwxyz23456789',pw=Array.from(crypto.getRandomValues(new Uint8Array(8)),b=>ch[b%ch.length]).join('');
+  const r=await sb.rpc('admin_reset_password',{p_shop:s.id,p_pw:pw});
+  if(r.error){alert('تعذّر التنفيذ: '+r.error.message);return}
+  alert('كلمة السر المؤقتة: '+pw+'\n\nأرسلها لصاحب المحل ليدخل ثم يغيّرها من «تغيير كلمة السر» في لوحته.');
+  if(ph)open('https://wa.me/'+wa(ph)+'?text='+encodeURIComponent('كلمة السر المؤقتة لمحلك: '+pw+'\nادخل ثم غيّرها من «تغيير كلمة السر» في لوحتك.'),'_blank');
+}
 async function setAp(s){
   if(s.approved&&!confirm('إيقاف هذا المحل؟ ستختفي نظاراته من تطبيق الزبون.'))return;
   const r=await sb.rpc('set_approved',{p_shop:s.id,p_val:!s.approved});
