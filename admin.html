@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>لوحة الإدارة</title>
+<style>
+:root{--bg:#0e1a2b;--panel:#16263d;--line:#2a4163;--ink:#eaf1fb;--mute:#8da4c4;--acc:#ffb703}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Tahoma,system-ui,sans-serif;padding:14px;display:flex;justify-content:center}
+.w{width:100%;max-width:720px;display:grid;gap:12px;align-content:start}
+h1{font-size:1.3rem;margin:2px 0}
+.hide{display:none!important}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px}
+input{width:100%;font:inherit;color:var(--ink);background:#0b1626;border:1px solid var(--line);border-radius:10px;padding:11px;margin:6px 0}
+button,a.b{font:inherit;cursor:pointer;color:var(--ink);background:#1d3555;border:1px solid var(--line);border-radius:10px;padding:9px 14px;min-height:44px;touch-action:manipulation;text-decoration:none;display:inline-flex;align-items:center}
+button:focus-visible,input:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.pri{background:var(--acc);color:#1a1200;border:0;font-weight:700}
+.on{background:var(--acc);color:#1a1200;border-color:var(--acc);font-weight:700}
+.bad{background:#5a1f2b;border-color:#8a3040}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.st{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.st div{background:#0b1626;border-radius:10px;padding:8px;text-align:center;font-size:.8rem;color:var(--mute)}
+.st b{display:block;font-size:1.3rem;color:var(--ink)}
+.th img{width:58px;height:34px;object-fit:contain;background:#0b1626;border-radius:6px}
+.note{font-size:.85rem;color:var(--mute);margin:2px 0}
+.warn{color:#ffb86b;font-size:.85rem}
+.err{color:#ff8a8a;min-height:1.2em}
+</style>
+</head>
+<body>
+<div class="w">
+<h1>لوحة الإدارة</h1>
+
+<div class="card" id="login">
+  <input type="text" id="em" placeholder="البريد" autocomplete="username" dir="ltr">
+  <input type="password" id="pw" placeholder="كلمة السر" autocomplete="current-password" dir="ltr">
+  <div class="err" id="err"></div>
+  <button class="pri" id="go">دخول</button>
+</div>
+
+<div id="main" class="hide w">
+  <div class="st" id="stats"></div>
+  <div class="row" id="chips"></div>
+  <div id="list"></div>
+  <div class="row"><button id="refresh">تحديث</button><button id="out">خروج</button></div>
+</div>
+</div>
+
+<script type="module">
+import {createClient} from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import {SUPABASE_URL,SUPABASE_KEY} from "./config.js";
+const sb=createClient(SUPABASE_URL,SUPABASE_KEY);
+const $=id=>document.getElementById(id);
+const h=(t,a={},...k)=>{const e=document.createElement(t);Object.assign(e,a);k.flat().forEach(x=>e.append(x));return e};
+const wa=p=>{let d=(p||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else if(d.startsWith('0'))d='963'+d.slice(1);return d};
+let D=null,flt='pending';
+
+$('go').onclick=async()=>{
+  $('err').textContent='';
+  const{error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw').value});
+  if(error){$('err').textContent='بيانات الدخول غير صحيحة';return}
+  boot();
+};
+$('out').onclick=async()=>{await sb.auth.signOut();D=null;$('main').classList.add('hide');$('login').classList.remove('hide')};
+$('refresh').onclick=()=>load();
+async function boot(){
+  const{data:{session}}=await sb.auth.getSession();if(!session)return;
+  const r=await sb.rpc('is_admin');
+  if(!r.data){await sb.auth.signOut();$('err').textContent='هذا الحساب ليس حساب إدارة';return}
+  $('login').classList.add('hide');$('main').classList.remove('hide');load();
+}
+async function load(){
+  const R=await Promise.all([
+    sb.from('shops').select('*').order('created_at',{ascending:false}),
+    sb.from('shop_contacts').select('*'),
+    sb.from('glasses').select('id,shop_id,name,img_url'),
+    sb.from('bookings').select('shop_id,status,cust')]);
+  const bad=R.find(r=>r.error);if(bad){alert('تعذّر التحميل: '+bad.error.message);return}
+  D={S:R[0].data,P:Object.fromEntries(R[1].data.map(c=>[c.shop_id,c.phone])),G:R[2].data,B:R[3].data};draw();
+}
+function draw(){
+  const{S,G,B}=D,pend=S.filter(s=>!s.approved).length;
+  $('stats').innerHTML='';
+  [['المحلات',S.length],['بانتظار الموافقة',pend],['النظارات',G.length],['محجوزة',B.filter(b=>b.status==='reserved').length],['مباعة',B.filter(b=>b.status==='sold').length],
+   ['تحتاج مراجعة',B.filter(b=>b.cust==='bought'&&b.status!=='sold').length]]
+   .forEach(([t,n])=>$('stats').append(h('div',{},h('b',{textContent:n}),t)));
+  $('chips').innerHTML='';
+  [['pending','بانتظار الموافقة'],['approved','المعتمدة'],['all','الكل']].forEach(([k,t])=>
+    $('chips').append(h('button',{className:flt===k?'on':'',textContent:t,onclick:()=>{flt=k;draw()}})));
+  const L=S.filter(s=>flt==='all'||(flt==='pending')===!s.approved);
+  $('list').innerHTML='';
+  if(!L.length)$('list').append(h('p',{className:'note',textContent:'لا توجد محلات في هذه القائمة.'}));
+  L.forEach(s=>{
+    const gs=G.filter(g=>g.shop_id===s.id),bs=B.filter(b=>b.shop_id===s.id),flags=bs.filter(b=>b.cust==='bought'&&b.status!=='sold').length,ph=D.P[s.id]||'';
+    $('list').append(h('div',{className:'card',style:'margin-bottom:10px'},
+      h('b',{textContent:s.name+(s.city?' — '+s.city:'')}),
+      h('p',{className:'note',textContent:'الهاتف: '+(ph||'—')+' | سُجّل: '+new Date(s.created_at).toLocaleDateString('ar')}),
+      h('p',{className:'note',textContent:'النظارات: '+gs.length+' | المبيعات المؤكدة: '+bs.filter(b=>b.status==='sold').length}),
+      flags?h('p',{className:'warn',textContent:'⚠ '+flags+' حجز يقول الزبون إنه اشترى ولم يؤكد المحل'}):'',
+      h('div',{className:'row th'},gs.slice(0,8).map(g=>h('img',{src:g.img_url,alt:g.name,title:g.name}))),
+      h('div',{className:'row'},
+        h('button',{className:s.approved?'bad':'pri',textContent:s.approved?'إيقاف المحل':'اعتماد المحل',onclick:()=>setAp(s)}),
+        ph?h('a',{className:'b',href:'tel:'+ph,textContent:'اتصال'}):'',
+        ph?h('a',{className:'b',href:'https://wa.me/'+wa(ph),target:'_blank',rel:'noopener',textContent:'واتساب'}):'')));
+  });
+}
+async function setAp(s){
+  if(s.approved&&!confirm('إيقاف هذا المحل؟ ستختفي نظاراته من تطبيق الزبون.'))return;
+  const r=await sb.rpc('set_approved',{p_shop:s.id,p_val:!s.approved});
+  if(r.error){alert('تعذّر التنفيذ: '+r.error.message);return}
+  load();
+}
+boot();
+</script>
+</body>
+</html>

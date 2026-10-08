@@ -60,6 +60,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 
 <!-- اللوحة -->
 <div id="panel" class="hide w">
+  <div class="card hide" id="pend">⏳ حسابك بانتظار موافقة الإدارة. يمكنك إضافة نظاراتك الآن، لكنها لن تظهر للزبائن قبل الموافقة.</div>
   <div class="card bar"><b id="shopname"></b><button id="out">تسجيل خروج</button></div>
 
   <div class="card">
@@ -147,9 +148,9 @@ $('out').onclick=async()=>{await sb.auth.signOut();stopCam();items=[];await rend
 
 async function render(){
   const{data:{session}}=await sb.auth.getSession();me=null;
-  if(session){const r=await sb.from('shops').select('id,name,city').eq('id',session.user.id).maybeSingle();me=r.data}
+  if(session){const r=await sb.from('shops').select('id,name,city,approved').eq('id',session.user.id).maybeSingle();me=r.data}
   $('auth').classList.toggle('hide',!!me);$('panel').classList.toggle('hide',!me);
-  if(!me)return;$('shopname').textContent=me.name+(me.city?' — '+me.city:'');
+  if(!me)return;$('shopname').textContent=me.name+(me.city?' — '+me.city:'');$('pend').classList.toggle('hide',me.approved!==false);
   try{await drawList();await drawBk()}catch(e){fail(e)}
 }
 async function drawList(){
