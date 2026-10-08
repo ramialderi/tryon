@@ -45,6 +45,7 @@ canvas{width:100%;height:auto;display:block}
 .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .18s}.flash.go{opacity:.85;transition:none}
 .prev{position:fixed;inset:0;background:#000e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;z-index:50}
 .prev img{max-width:100%;max-height:68vh;border-radius:14px}
+.hm{margin-inline-start:auto}
 .top{display:flex;align-items:center;gap:10px;margin-bottom:4px}
 .sg{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
 .sc{position:relative;aspect-ratio:3/4;border-radius:18px;overflow:hidden;padding:0;display:block;background:linear-gradient(160deg,#27456e,#0b1626)}
@@ -68,7 +69,7 @@ canvas{width:100%;height:auto;display:block}
   <div class="stage"><canvas id="c" width="960" height="720"></canvas>
     <div id="msg"><span>اسمح بالكاميرا لتظهر النظارة على وجهك. الصورة تبقى على جهازك.</span><button class="pri" id="start">تشغيل الكاميرا</button></div><button id="shot" class="shot hide" aria-label="التقاط صورة"></button><div id="flash" class="flash"></div></div>
   <div class="cap"><div><b id="gname">—</b><small id="sname"></small></div><button id="fav">♡ أضفها للمفضلة</button></div>
-  <div class="rhead"><b id="rtitle">نظارات المحلات</b><button class="link" id="more">المزيد ›</button></div>
+  <div class="rhead"><b id="rtitle">نظارات المحلات</b><span><button class="link hide" id="home1">الرئيسية</button><button class="link" id="more">المزيد ›</button></span></div>
   <div class="rail" id="rail"></div>
   <p class="note" id="none">لا توجد نظارات متاحة بعد. أضف نظارات من لوحة صاحب المحل أولًا.</p>
 </div>
@@ -81,12 +82,12 @@ canvas{width:100%;height:auto;display:block}
 </div>
 
 <div id="v3" class="hide">
-  <div class="top"><button id="b3">→ رجوع</button><b>المحلات</b></div>
+  <div class="top"><button id="b3">→ رجوع</button><b>المحلات</b><button id="h3" class="hm">الرئيسية</button></div>
   <div class="sg" id="sgrid"></div>
 </div>
 
 <div id="v4" class="hide">
-  <div class="top"><button id="b4">→ رجوع</button><b id="shn"></b></div>
+  <div class="top"><button id="b4">→ رجوع</button><b id="shn"></b><button id="h4" class="hm">الرئيسية</button></div>
   <div class="gg" id="ggrid"></div>
 </div>
 </div>
@@ -103,10 +104,10 @@ const $=id=>document.getElementById(id);
 const R=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
 const Wr=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const h=(t,a={},...k)=>{const e=document.createElement(t);Object.assign(e,a);k.flat().forEach(x=>e.append(x));return e};
-const sb=createClient(SUPABASE_URL,SUPABASE_KEY);let GL=[];
+const sb=createClient(SUPABASE_URL,SUPABASE_KEY);let GL=[],last=0;
 const shopOf=id=>{const g=GL.find(x=>x.shop_id===id);return g?g.shops:{name:'محل',city:''}};
 const avail=()=>GL.filter(g=>g.avail);
-async function load(){const r=await sb.from('glasses').select('*, shops(name,city)').order('created_at',{ascending:false});if(!r.error)GL=r.data;else $('none').textContent='تعذّر الاتصال بالخادم. تأكد من الإنترنت.'}
+async function load(){const r=await sb.from('glasses').select('*, shops(name,city)').order('created_at',{ascending:false});if(!r.error){GL=r.data;last=Date.now();if(sel)sel=GL.find(g=>g.id===sel.id)||sel}else $('none').textContent='تعذّر الاتصال بالخادم. تأكد من الإنترنت.'}
 const wa=p=>{let d=(p||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else if(d.startsWith('0'))d='963'+d.slice(1);return d};
 const AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789',gen=()=>Array.from({length:5},()=>AL[Math.random()*AL.length|0]).join('');
 let sel=null,fav=R('favs',[]),imgs={};
@@ -116,14 +117,16 @@ const pic=g=>{if(!imgs[g.id]){const i=new Image();i.crossOrigin='anonymous';i.sr
 const RAIL_MAX=10;let scope=null;
 function show(v){[1,2,3,4].forEach(k=>$('v'+k).classList.toggle('hide',k!==v));
   $('t1').classList.toggle('on',v!==2);$('t2').classList.toggle('on',v===2);scrollTo(0,0)}
-function apply(st){const v=st.v||1;show(v);
-  if(v===1)rail();if(v===2){favs();bookings()}if(v===3)drawShops();if(v===4)drawShop(st.p)}
+function render(st){const v=st.v||1;if(v===1)rail();if(v===2){favs();bookings()}if(v===3)drawShops();if(v===4)drawShop(st.p)}
+function apply(st){show(st.v||1);render(st);if(Date.now()-last>30000)load().then(()=>render(st))}
+const home=()=>{scope=null;nav(1)};
+addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-last>30000)load().then(()=>render(history.state||{v:1}))});
 function nav(v,p){history.pushState({v,p},'');apply({v,p})}
 addEventListener('popstate',e=>apply(e.state||{v:1}));
 history.replaceState({v:1},'');
 $('t1').onclick=()=>{scope=null;nav(1)};
 $('t2').onclick=async()=>{await load();nav(2)};
-$('more').onclick=()=>nav(3);$('b3').onclick=()=>history.back();$('b4').onclick=()=>history.back();
+$('more').onclick=()=>nav(3);$('home1').onclick=home;$('h3').onclick=home;$('h4').onclick=home;$('b3').onclick=()=>history.back();$('b4').onclick=()=>history.back();
 
 function drawShops(){
   const by={};avail().forEach(g=>(by[g.shop_id]=by[g.shop_id]||[]).push(g));
@@ -148,6 +151,7 @@ function rail(){
   const r=$('rail');r.innerHTML='';
   sh.forEach(g=>{const b=h('button',{className:'rb'+(sel&&sel.id===g.id?' on':''),onclick:()=>{sel=g;rail()}},h('img',{src:g.img_url,alt:g.name}));
     if(fav.includes(g.id))b.append(h('i',{textContent:'♥'}));r.append(b)});
+  $('home1').classList.toggle('hide',!scope);
   $('rtitle').textContent=scope?shopOf(scope).name+' ('+L.length+')':'نظارات المحلات';
   $('more').textContent=scope?'كل المحلات ›':(A.length>RAIL_MAX?'المزيد ›':'المحلات ›');
   const sp=sel&&shopOf(sel.shop_id);
