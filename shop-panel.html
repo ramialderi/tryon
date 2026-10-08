@@ -104,65 +104,75 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 
 <script type="module">
 import {FaceLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+import {createClient} from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import {SUPABASE_URL,SUPABASE_KEY} from "./config.js";
 const $=id=>document.getElementById(id);
 const R=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
 const Wr=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 
-/* طبقة التخزين: عند الربط بالخادم نستبدل هذا الكائن فقط */
-const store={
-  register(s){const a=R('shops',[]);if(a.some(x=>x.phone===s.phone))throw Error('هذا الرقم مسجّل من قبل');s.id=uid();a.push(s);Wr('shops',a);Wr('session',s.id)},
-  login(p,pw){const s=R('shops',[]).find(x=>x.phone===p&&x.pw===pw);if(!s)throw Error('الرقم أو كلمة السر غير صحيحة');Wr('session',s.id)},
-  me(){return R('shops',[]).find(x=>x.id===R('session',null))},
-  logout(){localStorage.removeItem('session')},
-  list(){const m=this.me();return R('glasses',[]).filter(g=>g.shopId===m.id)},
-  add(g){const a=R('glasses',[]);g.id=uid();g.shopId=this.me().id;a.push(g);Wr('glasses',a)},
-  del(id){Wr('glasses',R('glasses',[]).filter(g=>g.id!==id))}
-};
-
-/* ---------- الحجوزات ---------- */
-function drawBk(){
-  const m=store.me(),G=R('glasses',[]),B=R('bookings',[]).filter(b=>b.shopId===m.id).reverse(),box=$('bklist');box.innerHTML='';
-  if(!B.length){box.textContent='لا توجد حجوزات بعد.';return}
-  B.forEach(b=>{const d=document.createElement('div');d.className='it';d.style.cssText='text-align:start;margin-bottom:8px';
-    const st=b.status==='sold'?'تمّ البيع ✓':(Date.now()>b.created+3*864e5?'منتهي':'محجوز');
-    const names=b.glassIds.map(id=>(G.find(g=>g.id===id)||{name:'؟'}).name).join('، ');
-    d.textContent=b.code+' — '+st+' — '+names+(b.cust==='bought'&&b.status!=='sold'?' (الزبون يقول إنه اشترى)':'');box.appendChild(d)});
-}
-$('sell').onclick=()=>{
-  const code=$('bcode').value.trim().toUpperCase(),a=R('bookings',[]),m=store.me(),b=a.find(x=>x.code===code&&x.shopId===m.id);
-  $('bmsg').textContent='';
-  if(!b){$('bmsg').textContent='لا يوجد حجز بهذا الرمز في محلك';return}
-  if(b.status==='sold'){$('bmsg').textContent='سُجّلت هذه البيعة من قبل';return}
-  b.status='sold';Wr('bookings',a);$('bcode').value='';drawBk();
-};
+const sb=createClient(SUPABASE_URL,SUPABASE_KEY);let me=null;
+const ck=r=>{if(r.error)throw r.error;return r.data};
+const fake=p=>p.replace(/\D/g,'')+'@shop.tryon.app';
+const ar=m=>/already registered/i.test(m)?'هذا الرقم مسجّل من قبل':/invalid login/i.test(m)?'الرقم أو كلمة السر غير صحيحة':m;
+const fail=e=>alert('تعذّر تنفيذ العملية: '+e.message);
 
 /* ---------- الدخول ---------- */
 let reg=true;
 function authMode(){$('atitle').textContent=reg?'تسجيل محل جديد':'تسجيل الدخول';$('regOnly').classList.toggle('hide',!reg);
   $('ago').textContent=reg?'تسجيل':'دخول';$('aswap').textContent=reg?'لدي حساب بالفعل':'محل جديد؟ سجّل';$('aerr').textContent=''}
 $('aswap').onclick=()=>{reg=!reg;authMode()};
-$('ago').onclick=()=>{
-  const n=$('sn').value.trim(),c=$('sc').value.trim(),p=$('sp').value.trim(),pw=$('spw').value;
+$('ago').onclick=async()=>{
+  const n=$('sn').value.trim(),c=$('sc').value.trim(),p=$('sp').value.trim(),pw=$('spw').value;$('aerr').textContent='';
   try{
-    if(!p||pw.length<4)throw Error('أدخل رقم الهاتف وكلمة سر من 4 أحرف على الأقل');
-    if(reg){if(!n)throw Error('أدخل اسم المحل');store.register({name:n,city:c,phone:p,pw})}else store.login(p,pw);
-    render();
-  }catch(e){$('aerr').textContent=e.message}
+    if(p.replace(/\D/g,'').length<6||pw.length<6)throw Error('أدخل رقم هاتف صحيحًا وكلمة سر من 6 أحرف على الأقل');
+    if(reg){
+      if(!n)throw Error('أدخل اسم المحل');
+      const{data,error}=await sb.auth.signUp({email:fake(p),password:pw});if(error)throw error;
+      if(!data.session)throw Error('أوقف خيار تأكيد البريد في إعدادات Supabase (Authentication → Providers → Email)');
+      ck(await sb.from('shops').insert({id:data.user.id,name:n,city:c}));
+      ck(await sb.from('shop_contacts').insert({shop_id:data.user.id,phone:p}));
+    }else ck(await sb.auth.signInWithPassword({email:fake(p),password:pw}));
+    await render();
+  }catch(e){$('aerr').textContent=ar(e.message)}
 };
-$('out').onclick=()=>{store.logout();stopCam();render()};
+$('out').onclick=async()=>{await sb.auth.signOut();stopCam();items=[];await render()};
 
-function render(){
-  const m=store.me();$('auth').classList.toggle('hide',!!m);$('panel').classList.toggle('hide',!m);
-  if(!m)return;$('shopname').textContent=m.name+(m.city?' — '+m.city:'');drawList();drawBk();
+async function render(){
+  const{data:{session}}=await sb.auth.getSession();me=null;
+  if(session){const r=await sb.from('shops').select('id,name,city').eq('id',session.user.id).maybeSingle();me=r.data}
+  $('auth').classList.toggle('hide',!!me);$('panel').classList.toggle('hide',!me);
+  if(!me)return;$('shopname').textContent=me.name+(me.city?' — '+me.city:'');
+  try{await drawList();await drawBk()}catch(e){fail(e)}
 }
-function drawList(){
-  const l=store.list();$('empty').classList.toggle('hide',l.length>0);$('list').innerHTML='';
+async function drawList(){
+  const l=ck(await sb.from('glasses').select('*').eq('shop_id',me.id).order('created_at',{ascending:false}));
+  $('empty').classList.toggle('hide',l.length>0);$('list').innerHTML='';
   l.forEach(g=>{const d=document.createElement('div');d.className='it';
-    d.innerHTML='<img alt=""><div></div>';d.firstChild.src=g.img;d.lastChild.textContent=g.name;
+    d.innerHTML='<img alt=""><div></div>';d.firstChild.src=g.img_url;d.lastChild.textContent=g.name;
     const b=document.createElement('button');b.textContent='حذف';b.style.marginTop='6px';
-    b.onclick=()=>{if(confirm('حذف هذه النظارة؟')){store.del(g.id);drawList()}};const v=document.createElement('button');v.textContent=g.avail===false?'نفد ✗':'متوفر ✓';v.onclick=()=>{const a=R('glasses',[]);const x=a.find(y=>y.id===g.id);x.avail=x.avail===false;Wr('glasses',a);drawList()};d.append(v,b);$('list').appendChild(d)});
+    b.onclick=async()=>{if(!confirm('حذف هذه النظارة؟'))return;try{await sb.storage.from('glasses').remove([g.img_path]);ck(await sb.from('glasses').delete().eq('id',g.id));drawList()}catch(e){fail(e)}};
+    const v=document.createElement('button');v.textContent=g.avail?'متوفر ✓':'نفد ✗';
+    v.onclick=async()=>{try{ck(await sb.from('glasses').update({avail:!g.avail}).eq('id',g.id));drawList()}catch(e){fail(e)}};
+    d.append(v,b);$('list').appendChild(d)});
 }
+
+/* ---------- الحجوزات ---------- */
+async function drawBk(){
+  const G=ck(await sb.from('glasses').select('id,name').eq('shop_id',me.id)),
+    B=ck(await sb.from('bookings').select('*').eq('shop_id',me.id).order('created_at',{ascending:false})),box=$('bklist');box.innerHTML='';
+  if(!B.length){box.textContent='لا توجد حجوزات بعد.';return}
+  B.forEach(b=>{const d=document.createElement('div');d.className='it';d.style.cssText='text-align:start;margin-bottom:8px';
+    const st=b.status==='sold'?'تمّ البيع ✓':(Date.now()>new Date(b.created_at).getTime()+3*864e5?'منتهي':'محجوز');
+    const names=b.glass_ids.map(id=>(G.find(g=>g.id===id)||{name:'؟'}).name).join('، ');
+    d.textContent=b.code+' — '+st+' — '+names+(b.cust==='bought'&&b.status!=='sold'?' (الزبون يقول إنه اشترى)':'');box.appendChild(d)});
+}
+$('sell').onclick=async()=>{
+  const code=$('bcode').value.trim().toUpperCase();$('bmsg').textContent='';if(!code)return;
+  const{error}=await sb.rpc('confirm_sale',{p_code:code});
+  if(error){$('bmsg').textContent='لا يوجد حجز ساري بهذا الرمز في محلك';return}
+  $('bcode').value='';drawBk();
+};
 
 /* ---------- الدفعة وإزالة الخلفية ---------- */
 const orig=$('orig'),octx=orig.getContext('2d',{willReadFrequently:true}),pv=$('pv');
@@ -285,13 +295,19 @@ function loop(){
 /* ---------- الحفظ ---------- */
 $('done').onclick=()=>{cur.scale=+$('sc2').value;cur.off=+$('off').value;toList()};
 $('applyAll').onclick=()=>{const a=+$('sc2').value,b=+$('off').value;items.forEach(i=>{i.scale=a;i.off=b});$('applyAll').textContent='تم التطبيق ✓'};
-$('saveAll').onclick=()=>{
-  const ok=items.filter(i=>i.cut);let n=0;$('berr').textContent='';
-  for(const it of ok){
-    try{store.add({name:it.name.trim()||'موديل '+(n+1),img:it.cut.toDataURL('image/webp',.85),scale:it.scale,off:it.off});n++}
-    catch(e){$('berr').textContent='حُفظ '+n+' من '+ok.length+' فقط: امتلأت مساحة التخزين التجريبية. احذف بعض النظارات القديمة.';break}
-  }
-  items=items.filter(i=>!ok.slice(0,n).includes(i));drawBatch();drawList();
+$('saveAll').onclick=async()=>{
+  const ok=items.filter(i=>i.cut);let n=0;$('berr').textContent='';$('saveAll').disabled=true;
+  try{
+    for(const it of ok){
+      $('berr').textContent='جارٍ الرفع '+(n+1)+' من '+ok.length+'…';
+      const blob=await new Promise(r=>it.cut.toBlob(r,'image/webp',.85)),ext=blob.type==='image/png'?'png':'webp',path=me.id+'/'+uid()+'.'+ext;
+      ck(await sb.storage.from('glasses').upload(path,blob,{contentType:blob.type}));
+      const url=sb.storage.from('glasses').getPublicUrl(path).data.publicUrl;
+      ck(await sb.from('glasses').insert({shop_id:me.id,name:it.name.trim()||'موديل '+(n+1),img_url:url,img_path:path,scale:it.scale,y_off:it.off}));n++;
+    }
+    $('berr').textContent='';
+  }catch(e){$('berr').textContent='رُفع '+n+' من '+ok.length+' فقط: '+e.message}
+  $('saveAll').disabled=false;items=items.filter(i=>!ok.slice(0,n).includes(i));drawBatch();await drawList();
   if(n)$('list').scrollIntoView({behavior:'smooth'});
 };
 
