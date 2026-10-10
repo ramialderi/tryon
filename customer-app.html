@@ -245,11 +245,21 @@ function loop(){
     if(face&&sel){const i=pic(sel);if(i.complete&&i.naturalWidth){
       const P=k=>({x:(1-face[k].x)*W,y:face[k].y*H});
       let A=mid(P(33),P(133)),B=mid(P(362),P(263));if(A.x>B.x)[A,B]=[B,A];
-      const d=Math.hypot(B.x-A.x,B.y-A.y),ang=Math.atan2(B.y-A.y,B.x-A.x),c=mid(A,B),gw=d*(sel.scale||2.3),gh=gw*i.naturalHeight/i.naturalWidth;
+      const d=Math.hypot(B.x-A.x,B.y-A.y),ang=Math.atan2(B.y-A.y,B.x-A.x),c=mid(A,B),gw=glassW(d,face,W,H),gh=gw*i.naturalHeight/i.naturalWidth;
       ctx.save();ctx.translate(c.x,c.y+d*(sel.y_off||0));ctx.rotate(ang);ctx.drawImage(i,-gw/2,-gh/2,gw,gh);ctx.restore();}}
   }
   requestAnimationFrame(loop);
 }
+
+let pxmm=0;
+function irisPx(f,W,H){if(!f[473])return 0;const d=(a,b)=>Math.hypot((f[a].x-f[b].x)*W,(f[a].y-f[b].y)*H);
+  return(Math.max(d(469,471),d(470,472))+Math.max(d(474,476),d(475,477)))/2}
+/* عرض النظارة بالبكسل على الوجه: قطر القزحية البشرية ≈ 11.7 مم يعطي مقياس الوجه، مع تصحيح تقريبي لأن الإطار أقرب للكاميرا من القزحية بنحو 15 مم */
+function realW(wmm,f,W,H,mult){
+  const ip=irisPx(f,W,H);if(!ip)return 0;pxmm=pxmm?pxmm*.9+ip/11.7*.1:ip/11.7;
+  const D=Math.max(220,W*.85*11.7/ip),k=1/(1-15/D);return wmm*pxmm*k*mult}
+const glassW=(d,f,W,H)=>{if(sel.w_mm){const rw=realW(sel.w_mm,f,W,H,sel.scale||1);if(rw)return rw}return d*(sel.w_mm?2.3:(sel.scale||2.3))};
+
 /* ---------- شكل الوجه والاقتراحات ---------- */
 const SHP={oval:'بيضاوي',round:'مستدير',square:'مربع',heart:'قلب',oblong:'طويل'};
 const FIT={round:['square','rect','cat','oversized'],square:['round','aviator','oval'],oval:['square','aviator','cat','round'],heart:['aviator','round','oval'],oblong:['oversized','square','round','aviator']};
