@@ -37,6 +37,8 @@ canvas{width:100%;height:auto;display:block}
 .th img{width:100%;height:36px;object-fit:contain}.th.off{opacity:.45}
 .note{font-size:.82rem;color:var(--mute);line-height:1.7;margin:4px 0}
 .code{font-size:1.9rem;letter-spacing:.2em;font-weight:700;color:var(--acc);margin:4px 0}
+#fssel{font:inherit;color:var(--ink);background:#0b1626;border:1px solid var(--line);border-radius:8px;padding:6px}
+.rb em{position:absolute;bottom:2px;inset-inline-start:5px;font-style:normal;font-size:.8rem}
 .rhead{display:flex;justify-content:space-between;align-items:center}
 .link{background:none;border:0;color:var(--acc);min-height:36px;padding:4px 8px}
 .shot{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);width:68px;height:68px;border-radius:50%;background:transparent;border:5px solid #fff;padding:0}
@@ -60,7 +62,7 @@ canvas{width:100%;height:auto;display:block}
 </head>
 <body>
 <div class="w">
-<h1>جرّب نظارتك قبل أن تخرج من البيت</h1>
+<h1 id="ttl">جرّب نظارتك قبل أن تخرج من البيت</h1>
 <button class="pri hide" id="instBtn">ثبّت التطبيق على جوالك</button>
 <p class="note hide" id="iosTip">في آيفون: اضغط زر المشاركة في Safari ثم «إضافة إلى الشاشة الرئيسية».</p>
 <div class="tabs"><button id="t1" class="on">تجربة</button><button id="t2">اختياراتي (<span id="fc">0</span>)</button></div>
@@ -68,6 +70,7 @@ canvas{width:100%;height:auto;display:block}
 <div id="v1">
   <div class="stage"><canvas id="c" width="960" height="720"></canvas>
     <div id="msg"><span>اسمح بالكاميرا لتظهر النظارة على وجهك. الصورة تبقى على جهازك.</span><button class="pri" id="start">تشغيل الكاميرا</button></div><button id="shot" class="shot hide" aria-label="التقاط صورة"></button><div id="flash" class="flash"></div></div>
+  <div class="cap hide" id="fsrow"><span id="fstxt">شكل وجهك: جارٍ القياس…</span><select id="fssel"></select></div>
   <div class="cap"><div><b id="gname">—</b><small id="sname"></small></div><button id="fav">♡ أضفها للمفضلة</button></div>
   <div class="rhead"><b id="rtitle">نظارات المحلات</b><span><button class="link hide" id="home1">الرئيسية</button><button class="link" id="more">المزيد ›</button></span></div>
   <div class="rail" id="rail"></div>
@@ -117,25 +120,26 @@ const Wr=(k,v)=>localStorage.setItem(k,JSON.stringify(v));
 const h=(t,a={},...k)=>{const e=document.createElement(t);Object.assign(e,a);k.flat().forEach(x=>e.append(x));return e};
 const sb=createClient(SUPABASE_URL,SUPABASE_KEY);let GL=[],last=0;
 const shopOf=id=>{const g=GL.find(x=>x.shop_id===id);return g?g.shops:{name:'محل',city:''}};
-const avail=()=>GL.filter(g=>g.avail);
-async function load(){const r=await sb.from('glasses').select('*, shops(name,city)').order('created_at',{ascending:false});if(!r.error){GL=r.data;last=Date.now();if(sel)sel=GL.find(g=>g.id===sel.id)||sel}else $('none').textContent='تعذّر الاتصال بالخادم. تأكد من الإنترنت.'}
+const LOCK=new URLSearchParams(location.search).get('shop'); // رابط خاص بمحل واحد
+const avail=()=>GL.filter(g=>g.avail&&(!LOCK||g.shop_id===LOCK));
+async function load(){let q=sb.from('glasses').select('*, shops(name,city)').order('created_at',{ascending:false});if(LOCK)q=q.eq('shop_id',LOCK);const r=await q;if(!r.error){GL=r.data;last=Date.now();if(sel)sel=GL.find(g=>g.id===sel.id)||sel}else $('none').textContent='تعذّر الاتصال بالخادم. تأكد من الإنترنت.'}
 const wa=p=>{let d=(p||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else if(d.startsWith('0'))d='963'+d.slice(1);return d};
 const AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789',gen=()=>Array.from({length:5},()=>AL[Math.random()*AL.length|0]).join('');
 let sel=null,fav=R('favs',[]),imgs={};
 const pic=g=>{if(!imgs[g.id]){const i=new Image();i.crossOrigin='anonymous';i.src=g.img_url;imgs[g.id]=i}return imgs[g.id]};
 
 /* ---------- التنقل بين الصفحات ---------- */
-const RAIL_MAX=10;let scope=null;
+const RAIL_MAX=10;let scope=LOCK||null;
 function show(v){[1,2,3,4].forEach(k=>$('v'+k).classList.toggle('hide',k!==v));
   $('t1').classList.toggle('on',v!==2);$('t2').classList.toggle('on',v===2);scrollTo(0,0)}
 function render(st){const v=st.v||1;if(v===1)rail();if(v===2){favs();bookings()}if(v===3)drawShops();if(v===4)drawShop(st.p)}
 function apply(st){show(st.v||1);render(st);if(Date.now()-last>30000)load().then(()=>render(st))}
-const home=()=>{scope=null;nav(1)};
+const home=()=>{scope=LOCK||null;nav(1)};
 addEventListener('visibilitychange',()=>{if(!document.hidden&&Date.now()-last>30000)load().then(()=>render(history.state||{v:1}))});
 function nav(v,p){history.pushState({v,p},'');apply({v,p})}
 addEventListener('popstate',e=>apply(e.state||{v:1}));
 history.replaceState({v:1},'');
-$('t1').onclick=()=>{scope=null;nav(1)};
+$('t1').onclick=()=>{scope=LOCK||null;nav(1)};
 $('t2').onclick=async()=>{await load();nav(2)};
 $('more').onclick=()=>nav(3);$('home1').onclick=home;$('h3').onclick=home;$('h4').onclick=home;$('b3').onclick=()=>history.back();$('b4').onclick=()=>history.back();
 
@@ -149,21 +153,23 @@ function drawShops(){
       h('span',{className:'ov'},h('b',{textContent:sh.name}),h('small',{textContent:(sh.city?sh.city+' · ':'')+L.length+' نظارة'}))))});
 }
 function drawShop(sid){
-  const sh=shopOf(sid),L=avail().filter(g=>g.shop_id===sid);
+  const sh=shopOf(sid),L=ord(avail().filter(g=>g.shop_id===sid));
   $('shn').textContent=sh.name+(sh.city?' — '+sh.city:'');const box=$('ggrid');box.innerHTML='';
-  L.forEach(g=>box.append(h('button',{className:'gt',onclick:()=>{scope=sid;sel=g;nav(1)}},h('img',{src:g.img_url,alt:g.name}),g.name)));
+  L.forEach(g=>box.append(h('button',{className:'gt',onclick:()=>{scope=sid;sel=g;nav(1)}},h('img',{src:g.img_url,alt:g.name}),(fsc(g)>0?'✨ ':'')+g.name)));
 }
 
 /* ---------- شريط النظارات ---------- */
 function rail(){
-  const A=avail(),L=scope?A.filter(g=>g.shop_id===scope):A;$('none').classList.toggle('hide',A.length>0);
+  const A=avail(),L=ord(scope?A.filter(g=>g.shop_id===scope):A);$('none').classList.toggle('hide',A.length>0);
   if(!sel||!A.some(g=>g.id===sel.id))sel=L[0]||A[0]||null;
   let sh=scope?L:L.slice(0,RAIL_MAX);if(sel&&!sh.some(g=>g.id===sel.id))sh=[sel,...sh.slice(0,RAIL_MAX-1)];
   const r=$('rail');r.innerHTML='';
   sh.forEach(g=>{const b=h('button',{className:'rb'+(sel&&sel.id===g.id?' on':''),onclick:()=>{sel=g;rail()}},h('img',{src:g.img_url,alt:g.name}));
-    if(fav.includes(g.id))b.append(h('i',{textContent:'♥'}));r.append(b)});
-  $('home1').classList.toggle('hide',!scope);
-  $('rtitle').textContent=scope?shopOf(scope).name+' ('+L.length+')':'نظارات المحلات';
+    if(fav.includes(g.id))b.append(h('i',{textContent:'♥'}));if(fsc(g)>0)b.append(h('em',{textContent:'✨'}));r.append(b)});
+  $('home1').classList.toggle('hide',!scope||!!LOCK);$('more').classList.toggle('hide',!!LOCK);
+  if(LOCK){const g0=GL.find(x=>x.shop_id===LOCK);$('ttl').textContent=g0?'جرّب نظارات '+g0.shops.name:'هذا المحل غير متاح حاليًا';
+    $('none').textContent='لا توجد نظارات متاحة لهذا المحل حاليًا.'}
+  $('rtitle').textContent=scope?shopOf(scope).name+' ('+L.length+')':(shape?'مقترحة لوجهك ثم الأحدث':'نظارات المحلات');
   $('more').textContent=scope?'كل المحلات ›':(A.length>RAIL_MAX?'المزيد ›':'المحلات ›');
   const sp=sel&&shopOf(sel.shop_id);
   $('gname').textContent=sel?sel.name:'—';$('sname').textContent=sel?sp.name+(sp.city?' — '+sp.city:''):'';
@@ -228,14 +234,14 @@ $('start').onclick=async()=>{
   $('msg').firstChild.textContent='جارٍ تحميل نموذج الوجه…';
   try{lm=await makeLandmarker()}
   catch(e){$('msg').firstChild.textContent='تعذّر تحميل نموذج الوجه. تأكد من الإنترنت.';$('start').disabled=false;return}
-  $('msg').classList.add('hide');$('shot').classList.remove('hide');running=true;loop();
+  $('msg').classList.add('hide');$('shot').classList.remove('hide');$('fsrow').classList.remove('hide');showShape();running=true;loop();
 };
 const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
 function loop(){
   const W=cv.width,H=cv.height;
   if(!$('v1').classList.contains('hide')){
     ctx.save();ctx.translate(W,0);ctx.scale(-1,1);ctx.drawImage(vid,0,0,W,H);ctx.restore();
-    if(vid.currentTime!==lastT){lastT=vid.currentTime;const r=lm.detectForVideo(vid,performance.now());face=r.faceLandmarks&&r.faceLandmarks[0]||null}
+    if(vid.currentTime!==lastT){lastT=vid.currentTime;const r=lm.detectForVideo(vid,performance.now());face=r.faceLandmarks&&r.faceLandmarks[0]||null;if(face&&!man&&!measured)sampleFace(face,W,H)}
     if(face&&sel){const i=pic(sel);if(i.complete&&i.naturalWidth){
       const P=k=>({x:(1-face[k].x)*W,y:face[k].y*H});
       let A=mid(P(33),P(133)),B=mid(P(362),P(263));if(A.x>B.x)[A,B]=[B,A];
@@ -244,6 +250,27 @@ function loop(){
   }
   requestAnimationFrame(loop);
 }
+/* ---------- شكل الوجه والاقتراحات ---------- */
+const SHP={oval:'بيضاوي',round:'مستدير',square:'مربع',heart:'قلب',oblong:'طويل'};
+const FIT={round:['square','rect','cat','oversized'],square:['round','aviator','oval'],oval:['square','aviator','cat','round'],heart:['aviator','round','oval'],oblong:['oversized','square','round','aviator']};
+const TH={oblong:1.5,heartGap:.16,sqJaw:.9,sqLen:1.42,rdLen:1.32}; // حدود تقريبية تُضبط بعد التجربة (أضف #debug لرابط الصفحة لرؤية الأرقام)
+let shape=R('fshape',null),man=R('fman',false),samples=[],measured=false;
+const fsc=g=>{const f=FIT[shape];if(!f||!g.style)return 0;const i=f.indexOf(g.style);return i<0?0:f.length-i};
+const ord=L=>[...L].sort((a,b)=>fsc(b)-fsc(a)||new Date(b.created_at)-new Date(a.created_at));
+$('fssel').append(...[['','قياس تلقائي'],...Object.entries(SHP)].map(([v,t])=>h('option',{value:v,textContent:t})));
+function showShape(x){$('fssel').value=man?shape:'';$('fstxt').textContent=shape?'شكل وجهك: '+SHP[shape]+(man?'':' (تقديري)')+(x||''):'شكل وجهك: جارٍ القياس… انظر للأمام'}
+function setShape(s,m,x){shape=s;Wr('fshape',s);man=m;Wr('fman',m);showShape(x);rail()}
+$('fssel').onchange=()=>{const v=$('fssel').value;if(v)setShape(v,true);else{man=false;Wr('fman',false);measured=false;samples=[];showShape()}};
+function sampleFace(f,W,H){
+  const d=(a,b)=>Math.hypot((f[a].x-f[b].x)*W,(f[a].y-f[b].y)*H),ch=d(234,454),yaw=d(234,1)/d(454,1);
+  if(yaw<.85||yaw>1.18)return;
+  samples.push([d(10,152)/ch,d(58,288)/ch,d(54,284)/ch]);if(samples.length<25)return;
+  const med=i=>samples.map(s=>s[i]).sort((a,b)=>a-b)[12],len=med(0),jaw=med(1),fh=med(2);samples=[];measured=true;
+  let s='oval';
+  if(len>TH.oblong)s='oblong';else if(fh-jaw>TH.heartGap)s='heart';else if(jaw>TH.sqJaw&&len<TH.sqLen)s='square';else if(len<TH.rdLen&&jaw<TH.sqJaw)s='round';
+  setShape(s,false,location.hash==='#debug'?' ['+len.toFixed(2)+' / '+jaw.toFixed(2)+' / '+fh.toFixed(2)+']':'');
+}
+
 /* ---------- التقاط الصورة ---------- */
 let blob=null,burl=null;const ios=/iphone|ipad/i.test(navigator.userAgent),fname=()=>'glasses-'+Date.now()+'.jpg';
 $('shot').onclick=()=>{
