@@ -60,6 +60,13 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 
 <!-- اللوحة -->
 <div id="panel" class="hide w">
+  <div class="card"><h2>رابط محلك ورمز QR</h2>
+    <p class="note">شارك الرابط على فيسبوك وإنستغرام وواتساب، أو اطبع الرمز وعلّقه في المحل، فيرى الزبون نظاراتك فقط ويجرّبها على وجهه. يعمل الرابط عندما يكون محلك معتمدًا ورصيدك كافيًا.</p>
+    <input type="text" id="lnk" readonly dir="ltr" style="font-size:.8rem">
+    <div class="bar"><button id="cplnk">نسخ الرابط</button><a class="btn" id="walnk" target="_blank" rel="noopener">مشاركة عبر واتساب</a><button id="qrdl" class="hide pri">تنزيل رمز QR للطباعة</button></div>
+    <p class="note" id="qrmsg"></p>
+    <canvas id="qrc" class="hide" style="max-width:240px;margin:8px auto;display:block;border-radius:10px;background:#fff"></canvas></div>
+
   <div class="card" id="wal"><b>رصيدك: <span id="bal">…</span></b>
     <p class="note" id="walnote"></p>
     <a class="btn pri hide" id="supp" target="_blank" rel="noopener">شحن الرصيد عبر واتساب</a>
@@ -109,7 +116,8 @@ input[type=range]{width:100%;accent-color:var(--acc)}
     <button class="pri" id="sell">تمّ البيع</button>
     <div id="bklist" style="margin-top:12px"></div></div>
 
-  <div class="card"><h2>نظاراتي</h2><div class="grid" id="list"></div><p class="note" id="empty">لم تضف نظارات بعد.</p></div>
+  <div class="card"><h2>نظاراتي</h2>
+    <button id="tagMissing">تصنيف غير المصنّفة تلقائيًا ✨</button><p class="note" id="tmsg"></p><div class="grid" id="list"></div><p class="note" id="empty">لم تضف نظارات بعد.</p></div>
 
   <div class="card"><h2>تغيير كلمة السر</h2>
     <input type="password" id="np" placeholder="كلمة السر الجديدة (6 أحرف على الأقل)" autocomplete="new-password">
@@ -143,6 +151,17 @@ const ck=r=>{if(r.error)throw r.error;return r.data};
 const fake=p=>p.replace(/\D/g,'')+'@shop.tryon.app';
 const ar=m=>/already registered/i.test(m)?'هذا الرقم مسجّل من قبل':/invalid login/i.test(m)?'الرقم أو كلمة السر غير صحيحة':m;
 const fail=e=>alert('تعذّر تنفيذ العملية: '+e.message);
+const STY=[['round','دائرية'],['square','مربعة'],['rect','مستطيلة'],['aviator','أفييتور'],['cat','عيون القطة'],['oval','بيضاوية'],['oversized','كبيرة جدًا'],['other','أخرى']];
+const loadCors=u=>new Promise((ok,no)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>ok(i);i.onerror=no;i.src=u});
+/* تصنيف تلقائي بالذكاء الاصطناعي عبر دالة الخادم (المفتاح السري لا يظهر هنا أبدًا) */
+async function aiTag(el){
+  try{const w0=el.naturalWidth||el.width,h0=el.naturalHeight||el.height,c=document.createElement('canvas'),w=320,h=Math.max(1,Math.round(w*h0/w0));
+    c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(el,0,0,w,h);
+    const r=await sb.functions.invoke('tag-glasses',{body:{image:c.toDataURL('image/jpeg',.8)}});
+    return r.error||!r.data||!r.data.style?null:r.data}catch(e){return null}
+}
+const styleSel=(val,fn,first)=>{const s=document.createElement('select');s.style.cssText='width:100%;margin:4px 0;padding:8px;border-radius:8px;background:#0b1626;color:inherit;border:1px solid var(--line)';
+  [['',first],...STY].forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;if((val||'')===v)o.selected=true;s.appendChild(o)});s.onchange=()=>fn(s.value);return s};
 
 /* ---------- الدخول ---------- */
 let reg=true;
@@ -178,18 +197,18 @@ async function render(){
   if(session){const r=await sb.from('shops').select('id,name,city,approved').eq('id',session.user.id).maybeSingle();me=r.data}
   $('auth').classList.toggle('hide',!!me);$('panel').classList.toggle('hide',!me);
   if(!me)return;$('shopname').textContent=me.name+(me.city?' — '+me.city:'');$('pend').classList.toggle('hide',me.approved!==false);
-  try{await drawList();await drawBk();await drawWallet()}catch(e){fail(e)}
+  try{await drawList();await drawBk();await drawWallet();drawLink()}catch(e){fail(e)}
 }
 async function drawList(){
   const l=ck(await sb.from('glasses').select('*').eq('shop_id',me.id).order('created_at',{ascending:false}));
   $('empty').classList.toggle('hide',l.length>0);$('list').innerHTML='';
   l.forEach(g=>{const d=document.createElement('div');d.className='it';
-    d.innerHTML='<img alt=""><div></div>';d.firstChild.src=g.img_url;d.lastChild.textContent=g.name;
+    d.innerHTML='<img alt=""><div></div>';d.firstChild.src=g.img_url;d.lastChild.textContent=g.name+(g.tags_by==='ai'?' ✨':'');
     const b=document.createElement('button');b.textContent='حذف';b.style.marginTop='6px';
     b.onclick=async()=>{if(!confirm('حذف هذه النظارة؟'))return;try{await sb.storage.from('glasses').remove([g.img_path]);ck(await sb.from('glasses').delete().eq('id',g.id));drawList()}catch(e){fail(e)}};
     const v=document.createElement('button');v.textContent=g.avail?'متوفر ✓':'نفد ✗';
     v.onclick=async()=>{try{ck(await sb.from('glasses').update({avail:!g.avail}).eq('id',g.id));drawList()}catch(e){fail(e)}};
-    d.append(v,b);$('list').appendChild(d)});
+    d.append(styleSel(g.style,async val=>{try{ck(await sb.from('glasses').update({style:val||null,tags_by:val?'shop':null}).eq('id',g.id))}catch(e){fail(e)}},'غير مصنّفة'),v,b);$('list').appendChild(d)});
 }
 
 /* ---------- الرصيد ---------- */
@@ -276,7 +295,7 @@ function drawBatch(){
     const n=document.createElement('input');n.type='text';n.placeholder='موديل '+(i+1);n.value=it.name;n.style.margin='6px 0';n.oninput=()=>{it.name=n.value};
     const e=document.createElement('button');e.textContent='تعديل';e.onclick=()=>openEdit(it);
     const x=document.createElement('button');x.textContent='حذف';x.onclick=()=>{items.splice(i,1);drawBatch()};
-    d.append(box,n,e,x);g.appendChild(d)});
+    d.append(box,n,styleSel(it.style,v=>{it.style=v},'تصنيف تلقائي ✨'),e,x);g.appendChild(d)});
 }
 const seg=(a,b)=>{$(a).classList.add('on');$(b).classList.remove('on')};
 async function regen(){
@@ -349,7 +368,9 @@ $('saveAll').onclick=async()=>{
       const blob=await new Promise(r=>it.cut.toBlob(r,'image/webp',.85)),ext=blob.type==='image/png'?'png':'webp',path=me.id+'/'+uid()+'.'+ext;
       ck(await sb.storage.from('glasses').upload(path,blob,{contentType:blob.type}));
       const url=sb.storage.from('glasses').getPublicUrl(path).data.publicUrl;
-      ck(await sb.from('glasses').insert({shop_id:me.id,name:it.name.trim()||'موديل '+(n+1),img_url:url,img_path:path,scale:it.scale,y_off:it.off}));n++;
+      let tg={style:it.style||null,size:null,tags_by:it.style?'shop':null};
+      if(!it.style){const t=await aiTag(it.cut);if(t)tg={style:t.style,size:t.size,tags_by:'ai'}}
+      ck(await sb.from('glasses').insert({shop_id:me.id,name:it.name.trim()||'موديل '+(n+1),img_url:url,img_path:path,scale:it.scale,y_off:it.off,...tg}));n++;
     }
     $('berr').textContent='';
   }catch(e){$('berr').textContent='رُفع '+n+' من '+ok.length+' فقط: '+e.message}
@@ -357,6 +378,31 @@ $('saveAll').onclick=async()=>{
   if(n)$('list').scrollIntoView({behavior:'smooth'});
 };
 
+$('tagMissing').onclick=async()=>{
+  try{const l=ck(await sb.from('glasses').select('id,img_url').eq('shop_id',me.id).is('style',null));
+    if(!l.length){$('tmsg').textContent='كل نظاراتك مصنّفة.';return}
+    let ok=0;for(let k=0;k<l.length;k++){$('tmsg').textContent='جارٍ التصنيف '+(k+1)+' من '+l.length+'…';
+      const t=await aiTag(await loadCors(l[k].img_url).catch(()=>null));
+      if(t){ck(await sb.from('glasses').update({style:t.style,size:t.size,tags_by:'ai'}).eq('id',l[k].id));ok++}}
+    $('tmsg').textContent='صُنّفت '+ok+' من '+l.length+(ok<l.length?' (تحقق من إعداد دالة الذكاء الاصطناعي)':'');drawList();
+  }catch(e){fail(e)}
+};
+async function drawLink(){
+  const url=new URL('customer-app.html',location.href).href+'?shop='+me.id;
+  $('lnk').value=url;$('qrmsg').textContent='';$('walnk').href='https://wa.me/?text='+encodeURIComponent('جرّب نظاراتنا على وجهك قبل أن تزورنا:\n'+url);
+  try{
+    const QR=(await import('https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm')).default,q=document.createElement('canvas');
+    await QR.toCanvas(q,url,{width:560,margin:1,color:{dark:'#0e1a2b',light:'#ffffff'}});
+    const c=$('qrc'),x=c.getContext('2d');c.width=800;c.height=1000;x.fillStyle='#fff';x.fillRect(0,0,800,1000);
+    x.fillStyle='#0e1a2b';x.textAlign='center';x.direction='rtl';
+    let fs=56;x.font='700 '+fs+'px Tahoma,sans-serif';while(x.measureText(me.name).width>700&&fs>24){fs-=2;x.font='700 '+fs+'px Tahoma,sans-serif'}
+    x.fillText(me.name,400,120);x.font='400 36px Tahoma,sans-serif';x.fillText('جرّب نظاراتنا على وجهك قبل أن تزورنا',400,190);
+    x.drawImage(q,120,250,560,560);x.font='400 32px Tahoma,sans-serif';x.fillText('امسح الرمز بكاميرا جوالك',400,890);
+    c.classList.remove('hide');$('qrdl').classList.remove('hide');
+  }catch(e){$('qrmsg').textContent='تعذّر إنشاء رمز QR الآن، يمكنك استخدام الرابط.'}
+}
+$('cplnk').onclick=async()=>{try{await navigator.clipboard.writeText($('lnk').value);$('cplnk').textContent='تم النسخ ✓'}catch(e){$('lnk').select()}};
+$('qrdl').onclick=()=>{$('qrc').toBlob(b=>{const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='qr-shop.png';a.click()})};
 $('chpw').onclick=async()=>{
   const v=$('np').value;$('pmsg').style.color='';
   if(v.length<6){$('pmsg').textContent='كلمة السر 6 أحرف على الأقل';return}
