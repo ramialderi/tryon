@@ -126,7 +126,9 @@ async function load(){let q=sb.from('glasses').select('*, shops(name,city)').ord
 const wa=p=>{let d=(p||'').replace(/\D/g,'');if(d.startsWith('00'))d=d.slice(2);else if(d.startsWith('0'))d='963'+d.slice(1);return d};
 const AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789',gen=()=>Array.from({length:5},()=>AL[Math.random()*AL.length|0]).join('');
 let sel=null,fav=R('favs',[]),imgs={};
-const pic=g=>{if(!imgs[g.id]){const i=new Image();i.crossOrigin='anonymous';i.src=g.img_url;imgs[g.id]=i}return imgs[g.id]};
+const pic=g=>{if(!imgs[g.id]){const i=new Image();i.crossOrigin='anonymous';
+  i.onload=()=>{try{const c=document.createElement('canvas'),k=Math.min(1,320/i.naturalWidth);c.width=Math.max(1,Math.round(i.naturalWidth*k));c.height=Math.max(1,Math.round(i.naturalHeight*k));c.getContext('2d').drawImage(i,0,0,c.width,c.height);cys[g.id]=lensCy(c)}catch(e){cys[g.id]=null}};
+  i.src=g.img_url;imgs[g.id]=i}return imgs[g.id]};
 
 /* ---------- التنقل بين الصفحات ---------- */
 const RAIL_MAX=10;let scope=LOCK||null;
@@ -244,14 +246,23 @@ function loop(){
     if(vid.currentTime!==lastT){lastT=vid.currentTime;const r=lm.detectForVideo(vid,performance.now());face=r.faceLandmarks&&r.faceLandmarks[0]||null;if(face&&!man&&!measured)sampleFace(face,W,H)}
     if(face&&sel){const i=pic(sel);if(i.complete&&i.naturalWidth){
       const P=k=>({x:(1-face[k].x)*W,y:face[k].y*H});
-      let A=mid(P(33),P(133)),B=mid(P(362),P(263));if(A.x>B.x)[A,B]=[B,A];
+      let A=face[468]?P(468):mid(P(33),P(133)),B=face[473]?P(473):mid(P(362),P(263));if(A.x>B.x)[A,B]=[B,A]; // مركزا حدقتي العينين
       const d=Math.hypot(B.x-A.x,B.y-A.y),ang=Math.atan2(B.y-A.y,B.x-A.x),c=mid(A,B),gw=glassW(d,face,W,H),gh=gw*i.naturalHeight/i.naturalWidth;
-      ctx.save();ctx.translate(c.x,c.y+d*(sel.y_off||0));ctx.rotate(ang);ctx.drawImage(i,-gw/2,-gh/2,gw,gh);ctx.restore();}}
+      ctx.save();ctx.translate(c.x,c.y+d*(sel.y_off||0));ctx.rotate(ang);ctx.drawImage(i,-gw/2,-gh*(typeof cys[sel.id]==='number'?cys[sel.id]:.5),gw,gh);ctx.restore();}}
   }
   requestAnimationFrame(loop);
 }
 
-let pxmm=0;
+function lensCy(c){ // نسبة ارتفاع مركز العدستين (الفتحات المغلقة داخل الإطار) من أعلى الصورة، أو null إن لم توجد
+  const w=c.width,h=c.height,D=c.getContext('2d').getImageData(0,0,w,h).data,out=new Uint8Array(w*h),st=new Int32Array(w*h);let sp=0;
+  const open=p=>D[p*4+3]<60,push=p=>{if(!out[p]&&open(p)){out[p]=1;st[sp++]=p}};
+  for(let x=0;x<w;x++){push(x);push((h-1)*w+x)}for(let y=0;y<h;y++){push(y*w);push(y*w+w-1)}
+  while(sp){const p=st[--sp],x=p%w,y=(p/w)|0;if(x>0)push(p-1);if(x<w-1)push(p+1);if(y>0)push(p-w);if(y<h-1)push(p+w)}
+  let sy=0,n=0;for(let p=0;p<w*h;p++)if(!out[p]&&open(p)){sy+=(p/w|0);n++}
+  return n>w*h*.02?Math.min(.8,Math.max(.2,sy/n/h)):null;
+}
+
+let pxmm=0;const cys={};
 function irisPx(f,W,H){if(!f[473])return 0;const d=(a,b)=>Math.hypot((f[a].x-f[b].x)*W,(f[a].y-f[b].y)*H);
   return(Math.max(d(469,471),d(470,472))+Math.max(d(474,476),d(475,477)))/2}
 /* عرض النظارة بالبكسل على الوجه: قطر القزحية البشرية ≈ 11.7 مم يعطي مقياس الوجه، مع تصحيح تقريبي لأن الإطار أقرب للكاميرا من القزحية بنحو 15 مم */
