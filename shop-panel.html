@@ -41,7 +41,7 @@ input[type=range]{width:100%;accent-color:var(--acc)}
 <body>
 <div class="w">
 <h1>لوحة صاحب المحل</h1>
-<p class="note" style="margin:0">إصدار القياس الحقيقي ٣ (إزالة الظل)</p>
+<p class="note" style="margin:0">إصدار القياس الحقيقي ٤ (مركز العدسات)</p>
 <button class="pri hide" id="instBtn">ثبّت التطبيق على جوالك</button>
 <p class="note hide" id="iosTip">في آيفون: اضغط زر المشاركة في Safari ثم «إضافة إلى الشاشة الرئيسية».</p>
 
@@ -330,6 +330,15 @@ function shadowAlpha(D,w,h,bg,t,rad){ // يزيل الظل: الظل أفتح ب
     D[i+3]=a<=0?0:a>=1?255:a*255}
 }
 
+function lensCy(c){ // نسبة ارتفاع مركز العدستين (الفتحات المغلقة داخل الإطار) من أعلى الصورة، أو null إن لم توجد
+  const w=c.width,h=c.height,D=c.getContext('2d').getImageData(0,0,w,h).data,out=new Uint8Array(w*h),st=new Int32Array(w*h);let sp=0;
+  const open=p=>D[p*4+3]<60,push=p=>{if(!out[p]&&open(p)){out[p]=1;st[sp++]=p}};
+  for(let x=0;x<w;x++){push(x);push((h-1)*w+x)}for(let y=0;y<h;y++){push(y*w);push(y*w+w-1)}
+  while(sp){const p=st[--sp],x=p%w,y=(p/w)|0;if(x>0)push(p-1);if(x<w-1)push(p+1);if(y>0)push(p-w);if(y<h-1)push(p+w)}
+  let sy=0,n=0;for(let p=0;p<w*h;p++)if(!out[p]&&open(p)){sy+=(p/w|0);n++}
+  return n>w*h*.02?Math.min(.8,Math.max(.2,sy/n/h)):null;
+}
+
 let pxmm=0;
 function irisPx(f,W,H){if(!f[473])return 0;const d=(a,b)=>Math.hypot((f[a].x-f[b].x)*W,(f[a].y-f[b].y)*H);
   return(Math.max(d(469,471),d(470,472))+Math.max(d(474,476),d(475,477)))/2}
@@ -380,7 +389,7 @@ function makeCut(it){
   if(x1<=x0||y1<=y0)return null;
   const cw=x1-x0+1,ch=y1-y0+1,s=Math.min(1,520/cw),cut=document.createElement('canvas');
   cut.width=Math.round(cw*s);cut.height=Math.round(ch*s);cut.pxmm=it.real?RS*s:0;
-  cut.getContext('2d').drawImage(tmp,x0,y0,cw,ch,0,0,cut.width,cut.height);return cut;
+  cut.getContext('2d').drawImage(tmp,x0,y0,cw,ch,0,0,cut.width,cut.height);cut.cy=lensCy(cut);return cut;
 }
 function drawBatch(){
   $('batch').classList.toggle('hide',!items.length);$('btitle').textContent='٢. راجع النظارات ('+items.length+')';
@@ -466,11 +475,11 @@ function loop(){
   if(vid.currentTime!==lastT){lastT=vid.currentTime;const r=lm.detectForVideo(vid,performance.now());face=r.faceLandmarks&&r.faceLandmarks[0]||null}
   if(face&&cur&&cur.cut){
     const P=i=>({x:(1-face[i].x)*W,y:face[i].y*H});
-    let A=mid(P(33),P(133)),B=mid(P(362),P(263));if(A.x>B.x)[A,B]=[B,A];
+    let A=face[468]?P(468):mid(P(33),P(133)),B=face[473]?P(473):mid(P(362),P(263));if(A.x>B.x)[A,B]=[B,A]; // مركزا حدقتي العينين
     const d=Math.hypot(B.x-A.x,B.y-A.y),ang=Math.atan2(B.y-A.y,B.x-A.x),c=mid(A,B);
     let gw=d*$('sc2').value;if(cur.cut.pxmm){const rw=realW(cur.cut.width/cur.cut.pxmm,face,W,H,+$('sc2').value);if(rw)gw=rw}
     const gh=gw*cur.cut.height/cur.cut.width;
-    ctx.save();ctx.translate(c.x,c.y+d*$('off').value);ctx.rotate(ang);ctx.drawImage(cur.cut,-gw/2,-gh/2,gw,gh);ctx.restore();
+    ctx.save();ctx.translate(c.x,c.y+d*$('off').value);ctx.rotate(ang);ctx.drawImage(cur.cut,-gw/2,-gh*(cur.cut.cy??.5),gw,gh);ctx.restore();
   }
   requestAnimationFrame(loop);
 }
